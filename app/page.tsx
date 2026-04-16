@@ -101,7 +101,7 @@ export default function Home() {
         setSuggestionBatches((prev) => [...prev, batch]);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Suggestions error");
+      setError(e instanceof Error ? e.message : "Network error — check your connection.");
     } finally {
       setIsSuggestionsLoading(false);
     }
@@ -207,7 +207,8 @@ export default function Home() {
         });
 
         if (!res.ok || !res.body) {
-          setError("Chat request failed");
+          const errBody = await res.json().catch(() => ({ error: "Chat request failed" }));
+          setError(errBody.error ?? "Chat request failed");
           return;
         }
 
@@ -244,7 +245,7 @@ export default function Home() {
           ]);
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Chat error");
+        setError(e instanceof Error ? e.message : "Network error — check your connection.");
       } finally {
         setIsChatStreaming(false);
         setStreamingContent("");
