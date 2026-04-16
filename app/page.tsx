@@ -453,6 +453,7 @@ export default function Home() {
             batches={suggestionBatches}
             isLoading={isSuggestionsLoading}
             isTranscribing={isTranscribing}
+            isRecording={isRecording}
             nextRefreshIn={nextRefreshIn}
             onRefresh={() => {
               // If recording, flush the current audio chunk first (transcribes it),

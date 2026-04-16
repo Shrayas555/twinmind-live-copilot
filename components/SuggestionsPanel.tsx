@@ -8,6 +8,7 @@ interface Props {
   batches: SuggestionBatch[];
   isLoading: boolean;
   isTranscribing: boolean;
+  isRecording: boolean;
   nextRefreshIn: number | null; // seconds
   onRefresh: () => void;
   onSuggestionClick: (suggestion: Suggestion) => void;
@@ -99,6 +100,7 @@ export default function SuggestionsPanel({
   batches,
   isLoading,
   isTranscribing,
+  isRecording,
   nextRefreshIn,
   onRefresh,
   onSuggestionClick,
@@ -196,6 +198,8 @@ export default function SuggestionsPanel({
           <p className="text-zinc-600 text-sm italic text-center mt-8">
             {hasTranscript
               ? "Suggestions will appear after the next refresh."
+              : isRecording
+              ? "Recording… first suggestions appear in ~20s."
               : "Suggestions appear here once recording starts."}
           </p>
         )}

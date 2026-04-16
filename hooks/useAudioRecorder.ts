@@ -56,7 +56,8 @@ export function useAudioRecorder({
   );
 
   const startChunk = useCallback(
-    (stream: MediaStream) => {
+    (stream: MediaStream, overrideDuration?: number) => {
+      const duration = overrideDuration ?? chunkDuration;
       const chunks: BlobPart[] = [];
 
       // Prefer webm/opus for broad browser support; fall back to whatever is available
@@ -85,12 +86,12 @@ export function useAudioRecorder({
 
       recorder.start();
 
-      // Schedule end-of-chunk after the configured duration
+      // Schedule end-of-chunk after the configured (or overridden) duration
       chunkTimerRef.current = setTimeout(() => {
         if (recorder.state === "recording") {
           recorder.stop();
         }
-      }, chunkDuration * 1000);
+      }, duration * 1000);
     },
     [chunkDuration, transcribeBlob]
   );
@@ -103,7 +104,9 @@ export function useAudioRecorder({
       streamRef.current = stream;
       isRecordingRef.current = true;
       setIsRecording(true);
-      startChunk(stream);
+      // First chunk is shorter so initial suggestions appear faster;
+      // subsequent chunks restart at full chunkDuration via onstop → startChunk(stream)
+      startChunk(stream, Math.min(chunkDuration, 20));
     } catch (e) {
       onError(e instanceof Error ? e.message : "Mic access denied");
     }

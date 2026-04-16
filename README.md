@@ -1,19 +1,28 @@
-# TwinMind Live Suggestions
+# TwinMind Live — AI Meeting Copilot
 
-A real-time AI meeting copilot: live mic transcription, context-aware suggestions, and a streaming chat panel — all in a three-column layout.
+Real-time meeting intelligence: transcribes your mic, surfaces 3 context-aware AI suggestions every ~30 seconds, and streams detailed answers on demand.
+
+**Live:** https://twinmind-live.vercel.app  
+**Repo:** https://github.com/Shrayas555/twinmind-live-copilot
 
 ---
 
-## Setup
+## Quick start
+
+1. Open [twinmind-live.vercel.app](https://twinmind-live.vercel.app)
+2. Click **Settings → API Key** → paste a Groq key (free at [console.groq.com](https://console.groq.com))
+3. Click the mic button and start talking
+
+No login, no `.env` file, no server-side storage. Your API key stays in your browser.
+
+To run locally:
 
 ```bash
+git clone https://github.com/Shrayas555/twinmind-live-copilot.git
+cd twinmind-live
 npm install
 npm run dev   # → http://localhost:3000
 ```
-
-No `.env` needed. On first load, the app opens Settings and prompts for your **Groq API key** (stored in `localStorage`, never sent to any server other than Groq).
-
-**Get a free Groq API key:** [console.groq.com](https://console.groq.com)
 
 ---
 
@@ -22,11 +31,11 @@ No `.env` needed. On first load, the app opens Settings and prompts for your **G
 | Layer | Choice | Why |
 |---|---|---|
 | Framework | Next.js 16 (App Router) | API routes + React in one repo; one-command Vercel deploy |
-| Language | TypeScript | Compile-time safety |
-| Styling | Tailwind CSS | Dark UI with no component library overhead |
+| Language | TypeScript | Compile-time safety across all boundaries |
+| Styling | Tailwind CSS | Dark UI without component library overhead |
 | Transcription | Groq Whisper Large V3 | Best-in-class accuracy at low latency |
-| AI | Groq `meta-llama/llama-4-maverick-17b-128e-instruct` | GPT-OSS 120B equivalent; fastest capable open model on Groq |
-| Streaming | Server-Sent Events | First token in ~200ms from Groq |
+| AI | Groq `openai/gpt-oss-120b` | Assignment-required model; GPT-OSS 120B on Groq |
+| Streaming | Server-Sent Events | First chat token in ~200ms from Groq |
 
 ---
 
@@ -65,7 +74,11 @@ Blobs smaller than 1 KB are skipped — they are silence and cause Whisper error
 
 Every time a transcript chunk arrives, suggestions regenerate. An independent 30-second timer also fires while recording as a fallback (decoupled from chunk timing).
 
-**Context window:** Only the last 500 words are sent for suggestions. Recency matters more than full context when surfacing what's useful *right now*. The full transcript is reserved for detailed answers.
+**Context strategy — two-tier window:** The opening 60 words set meeting type ("Hi, this is Sarah from Acme…" → sales call). The recent 600 words are what's actionable right now. Both are sent together so the model has context for both "what kind of meeting" and "what just happened."
+
+**Last exchange spotlight:** `getLastExchange()` extracts the last 4 sentences (80-word fallback for unpunctuated Whisper output) as a dedicated section. The model triages on this first — not a rolling average of the transcript.
+
+**Skip-when-quiet:** Auto-refresh is skipped if fewer than 150 chars of new speech have been added since the last batch. Avoids wasted API calls during natural pauses while still firing the moment the conversation picks back up.
 
 **Type selection:** The prompt gives the model five types — `QUESTION`, `TALKING_POINT`, `ANSWER`, `FACT_CHECK`, `CLARIFICATION` — and a decision tree for choosing the mix:
 - Someone just asked a question → `ANSWER` takes priority
@@ -73,7 +86,7 @@ Every time a transcript chunk arrives, suggestions regenerate. An independent 30
 - Technical vocabulary or acronyms → `CLARIFICATION`
 - Open discussion with space to speak → `QUESTION` / `TALKING_POINT`
 
-The model picks the mix that fits. No type is enforced. This produces context-specific combinations rather than always showing the same three types.
+The model picks the mix that fits. Hard rule: if the last exchange contains a question, slot 1 is always `ANSWER`. Anti-repetition: the last 3 batches' previews are passed as `previousPreviews` — model is instructed to find fresh angles each time.
 
 **Preview quality:** The prompt explicitly requires previews to deliver standalone value without clicking. Generic previews like "Ask about the timeline" are useless. Specific ones like "They mentioned Q3 delays — ask for the exact date and what's blocking them" are useful.
 
@@ -103,8 +116,8 @@ Without it, the model occasionally wraps the JSON in prose ("Here are your sugge
 **Why two separate prompts for suggestions vs. detailed answers:**
 The context size, goal, and format are different. Suggestions: recent context, fast, punchy 130-char preview. Detailed answers: full transcript, structured with headers and bullets, thorough. One prompt trying to do both produces mediocre output at both.
 
-**Why 500 words for suggestions context, 3000 for detailed answers:**
-500 words ≈ 2-3 minutes of speech. That's the relevant window for what to surface right now. 3000 words gives the detailed answer model enough context to reference specifics from earlier in the meeting.
+**Why 600 words for suggestions context, 3000 for detailed answers:**
+600 words ≈ 3 minutes of speech — the relevant window for what to surface right now. 3000 words gives the detailed answer model enough context to reference specifics from earlier in the meeting.
 
 ---
 
@@ -118,35 +131,10 @@ The context size, goal, and format are different. Suggestions: recent context, f
 
 ---
 
-## Getting started (development)
+## Session export
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The **Export** button downloads a complete JSON file:
+- Full transcript with timestamps
+- Every suggestion batch (type + preview + detailPrompt)
+- Full chat history: display content, full API content for suggestion clicks, suggestion type, timestamps
+- Session metadata: duration, model names
