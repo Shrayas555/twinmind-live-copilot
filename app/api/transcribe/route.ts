@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 import { GROQ_TRANSCRIPTION_MODEL } from "@/lib/defaults";
-import { parseGroqError } from "@/lib/groqError";
+import { parseGroqError, groqErrorStatus } from "@/lib/groqError";
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,7 +34,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ text: transcription.text });
   } catch (err: unknown) {
     const message = parseGroqError(err);
+    const status = groqErrorStatus(err);
     console.error("[transcribe]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status });
   }
 }

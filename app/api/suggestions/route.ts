@@ -7,7 +7,7 @@ import {
 } from "@/lib/defaults";
 import type { Suggestion, SuggestionType } from "@/lib/types";
 import { genId } from "@/lib/defaults";
-import { parseGroqError } from "@/lib/groqError";
+import { parseGroqError, groqErrorStatus } from "@/lib/groqError";
 
 interface SuggestionRaw {
   type: string;
@@ -123,7 +123,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ suggestions });
   } catch (err: unknown) {
     const message = parseGroqError(err);
+    const status = groqErrorStatus(err);
     console.error("[suggestions]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status });
   }
 }

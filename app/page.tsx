@@ -240,30 +240,37 @@ export default function Home() {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let full = "";
+        let streamError = "";
+        let streamDone = false;
 
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
+        while (!streamDone) {
           const { done, value } = await reader.read();
           if (done) break;
           const lines = decoder.decode(value, { stream: true }).split("\n");
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
             const payload = line.slice(6);
-            if (payload === "[DONE]") break;
+            if (payload === "[DONE]") { streamDone = true; break; }
             try {
-              const parsed = JSON.parse(payload);
-              if (parsed.delta) {
-                full += parsed.delta;
+              const evt = JSON.parse(payload);
+              if (evt.delta) {
+                full += evt.delta;
                 setStreamingContent(full);
               }
-              if (parsed.error) setError(parsed.error);
+              if (evt.error) {
+                streamError = evt.error;
+                streamDone = true;
+                break;
+              }
             } catch {
-              // partial line — ignore
+              // partial SSE line — ignore
             }
           }
         }
 
-        if (full) {
+        if (streamError) {
+          setError(streamError);
+        } else if (full) {
           setChatMessages((prev) => [
             ...prev,
             { id: genId(), role: "assistant", content: full, timestamp: Date.now() },

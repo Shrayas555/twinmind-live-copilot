@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import Groq from "groq-sdk";
 import { GROQ_CHAT_MODEL } from "@/lib/defaults";
-import { parseGroqError } from "@/lib/groqError";
+import { parseGroqError, groqErrorStatus } from "@/lib/groqError";
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,6 +17,12 @@ export async function POST(req: NextRequest) {
     if (!apiKey) {
       return new Response(JSON.stringify({ error: "No API key" }), { status: 400 });
     }
+    if (!messages?.length) {
+      return new Response(JSON.stringify({ error: "No messages provided" }), { status: 400 });
+    }
+    if (!systemPrompt) {
+      return new Response(JSON.stringify({ error: "No system prompt provided" }), { status: 400 });
+    }
 
     const groq = new Groq({ apiKey });
     const system = systemPrompt.replace("{transcript}", transcript || "(No transcript yet)");
@@ -29,7 +35,6 @@ export async function POST(req: NextRequest) {
       stream: true,
     });
 
-    // Stream SSE back to the client
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
@@ -59,8 +64,8 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: unknown) {
     const message = parseGroqError(err);
+    const status = groqErrorStatus(err);
     console.error("[chat]", message);
-    const status = String(err instanceof Error ? err.message : "").includes("rate_limit") ? 429 : 500;
     return new Response(JSON.stringify({ error: message }), { status });
   }
 }
