@@ -41,7 +41,6 @@ function splitPrompt(combinedPrompt: string): { system: string; userTemplate: st
   const SEP = "---USER TEMPLATE---";
   const idx = combinedPrompt.indexOf(SEP);
   if (idx === -1) {
-    // Custom prompt — treat the whole thing as the user message, use default system
     return { system: DEFAULT_SUGGESTIONS_SYSTEM, userTemplate: combinedPrompt };
   }
   return {
@@ -50,12 +49,50 @@ function splitPrompt(combinedPrompt: string): { system: string; userTemplate: st
   };
 }
 
+/**
+ * Robustly extracts a SuggestionRaw[] from model output.
+ * Handles: plain JSON array, {suggestions:[]} wrapper, JSON embedded in prose,
+ * and the failed_generation field Groq returns on json_validate_failed errors.
+ */
+function extractSuggestions(text: string): SuggestionRaw[] {
+  if (!text?.trim()) return [];
+
+  // 1. Try direct parse
+  try {
+    const outer = JSON.parse(text);
+    if (Array.isArray(outer)) return outer;
+    if (Array.isArray(outer.suggestions)) return outer.suggestions;
+    if (Array.isArray(outer.data)) return outer.data;
+  } catch { /* fall through */ }
+
+  // 2. Find and parse the first JSON array in the text (model wrapped in prose)
+  const arrayMatch = text.match(/\[[\s\S]*?\]/);
+  if (arrayMatch) {
+    try {
+      const arr = JSON.parse(arrayMatch[0]);
+      if (Array.isArray(arr)) return arr;
+    } catch { /* fall through */ }
+  }
+
+  // 3. Find and parse the first JSON object (might contain suggestions key)
+  const objectMatch = text.match(/\{[\s\S]*\}/);
+  if (objectMatch) {
+    try {
+      const obj = JSON.parse(objectMatch[0]);
+      if (Array.isArray(obj.suggestions)) return obj.suggestions;
+      if (Array.isArray(obj.data)) return obj.data;
+    } catch { /* fall through */ }
+  }
+
+  return [];
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { transcript, lastExchange, systemPrompt, apiKey, model, previousPreviews } = body as {
       transcript: string;
-      lastExchange?: string; // last 3-4 sentences — explicit triage spotlight
+      lastExchange?: string;
       systemPrompt: string;
       apiKey: string;
       model?: string;
@@ -69,7 +106,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No API key provided" }, { status: 400 });
     }
 
-    // Don't waste an API call on a thin transcript — suggestions would be generic
     const wordCount = transcript.trim().split(/\s+/).length;
     if (wordCount < MIN_TRANSCRIPT_WORDS) {
       return NextResponse.json({ suggestions: [] });
@@ -85,26 +121,42 @@ export async function POST(req: NextRequest) {
       .replace("{lastExchange}", lastExchange ?? transcript.split(/\s+/).slice(-60).join(" "))
       .replace("{previousSuggestionsBlock}", previousSuggestionsBlock);
 
-    const completion = await groq.chat.completions.create({
-      model: model || GROQ_SUGGESTIONS_MODEL,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: userMessage },
-      ],
-      temperature: 0.65,
-      max_tokens: 600,
-      response_format: { type: "json_object" },
-    });
+    let rawContent: string;
 
-    const raw = completion.choices[0]?.message?.content ?? "[]";
-
-    let parsed: SuggestionRaw[];
     try {
-      const outer = JSON.parse(raw);
-      parsed = Array.isArray(outer) ? outer : (outer.suggestions ?? outer.data ?? []);
-    } catch {
-      console.error("[suggestions] Failed to parse JSON:", raw);
-      return NextResponse.json({ error: "Invalid JSON from model" }, { status: 500 });
+      const completion = await groq.chat.completions.create({
+        model: model || GROQ_SUGGESTIONS_MODEL,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: userMessage },
+        ],
+        temperature: 0.65,
+        max_tokens: 700,
+        // No response_format — openai/gpt-oss-120b can fail json_validate_failed
+        // with response_format:json_object. We extract JSON robustly from raw output instead.
+      });
+      rawContent = completion.choices[0]?.message?.content ?? "";
+    } catch (apiErr: unknown) {
+      // Groq returns 400 json_validate_failed when the model output isn't valid JSON
+      // but still includes the partial output in failed_generation — try to use it.
+      if (
+        apiErr instanceof Groq.APIError &&
+        apiErr.status === 400 &&
+        (apiErr.error as { code?: string })?.code === "json_validate_failed"
+      ) {
+        const failedGen = (apiErr.error as { failed_generation?: string })?.failed_generation ?? "";
+        console.warn("[suggestions] json_validate_failed — attempting recovery from failed_generation");
+        rawContent = failedGen;
+      } else {
+        throw apiErr; // re-throw for the outer catch to handle
+      }
+    }
+
+    const parsed = extractSuggestions(rawContent);
+
+    if (!parsed.length) {
+      console.error("[suggestions] Could not extract suggestions from:", rawContent.slice(0, 300));
+      return NextResponse.json({ suggestions: [] });
     }
 
     const suggestions: Suggestion[] = parsed
