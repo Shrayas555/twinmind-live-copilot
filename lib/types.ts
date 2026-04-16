@@ -51,10 +51,29 @@ export interface AppSettings {
 
 export interface SessionExport {
   exportedAt: string;
-  transcript: { text: string; timestamp: string }[];
+  session: {
+    durationMs: number;
+    suggestionsModel: string;
+    chatModel: string;
+    transcriptionModel: string;
+  };
+  transcript: {
+    text: string;
+    timestamp: string;
+  }[];
   suggestionBatches: {
     timestamp: string;
-    suggestions: { type: string; preview: string }[];
+    suggestions: {
+      type: string;
+      preview: string;
+      detailPrompt: string; // the expansion hint — shows suggestion depth
+    }[];
   }[];
-  chat: { role: string; content: string; timestamp: string; fromSuggestion?: string }[];
+  chat: {
+    role: string;
+    displayContent: string;       // what the user saw in the chat UI
+    apiContent?: string;          // full prompt sent to the model (for suggestion clicks)
+    timestamp: string;
+    fromSuggestionType?: string;  // type of suggestion that triggered this message
+  }[];
 }

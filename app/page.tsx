@@ -332,28 +332,53 @@ export default function Home() {
   // ── Export ────────────────────────────────────────────────────────────────
 
   const exportSession = useCallback(() => {
+    const s = settingsRef.current;
+    const now = Date.now();
+
+    // Compute session duration from the earliest event timestamp
+    const allTimestamps = [
+      ...transcriptChunks.map((c) => c.timestamp),
+      ...suggestionBatches.map((b) => b.timestamp),
+      ...chatMessages.map((m) => m.timestamp),
+    ];
+    const sessionStart = allTimestamps.length > 0 ? Math.min(...allTimestamps) : now;
+
     const data: SessionExport = {
-      exportedAt: new Date().toISOString(),
+      exportedAt: new Date(now).toISOString(),
+      session: {
+        durationMs: now - sessionStart,
+        suggestionsModel: s.suggestionsModel,
+        chatModel: s.chatModel,
+        transcriptionModel: s.transcriptionModel,
+      },
       transcript: transcriptChunks.map((c) => ({
         text: c.text,
         timestamp: new Date(c.timestamp).toISOString(),
       })),
       suggestionBatches: suggestionBatches.map((b) => ({
         timestamp: new Date(b.timestamp).toISOString(),
-        suggestions: b.suggestions.map((s) => ({ type: s.type, preview: s.preview })),
+        suggestions: b.suggestions.map((s) => ({
+          type: s.type,
+          preview: s.preview,
+          detailPrompt: s.detailPrompt,
+        })),
       })),
       chat: chatMessages.map((m) => ({
         role: m.role,
-        content: m.content,
+        displayContent: m.content,
+        ...(m.apiContent ? { apiContent: m.apiContent } : {}),
         timestamp: new Date(m.timestamp).toISOString(),
-        fromSuggestion: m.fromSuggestion,
+        ...(m.fromSuggestionType ? { fromSuggestionType: m.fromSuggestionType } : {}),
       })),
     };
+
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `twinmind-session-${Date.now()}.json`;
+    // Human-readable filename: twinmind-session-2026-04-16T14-30-00.json
+    const dateStr = new Date(now).toISOString().slice(0, 19).replace(/:/g, "-");
+    a.download = `twinmind-session-${dateStr}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }, [transcriptChunks, suggestionBatches, chatMessages]);
