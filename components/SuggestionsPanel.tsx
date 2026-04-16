@@ -4,15 +4,16 @@ import { useState } from "react";
 import type { SuggestionBatch, Suggestion, SuggestionType } from "@/lib/types";
 import { formatTimestamp } from "@/lib/defaults";
 
+
 interface Props {
   batches: SuggestionBatch[];
   isLoading: boolean;
   isTranscribing: boolean;
   isRecording: boolean;
-  nextRefreshIn: number | null; // seconds
+  /** Seconds until current audio segment ends (~next transcript + suggestion refresh). */
+  nextChunkIn: number | null;
   onRefresh: () => void;
   onSuggestionClick: (suggestion: Suggestion) => void;
-  clickedIds: Set<string>;
   hasTranscript: boolean;
 }
 
@@ -65,11 +66,9 @@ const TYPE_CONFIG: Record<
 function SuggestionCard({
   suggestion,
   onClick,
-  wasClicked,
 }: {
   suggestion: Suggestion;
   onClick: () => void;
-  wasClicked: boolean;
 }) {
   const cfg = TYPE_CONFIG[suggestion.type] ?? TYPE_CONFIG.QUESTION;
 
@@ -78,8 +77,8 @@ function SuggestionCard({
       onClick={onClick}
       className={`
         w-full text-left rounded-lg border p-3 transition-all duration-150
-        ${wasClicked ? "bg-zinc-900/50 opacity-60" : "bg-zinc-900 hover:bg-zinc-800/80"}
-        border-zinc-800 ${wasClicked ? "" : cfg.hoverBorder}
+        bg-zinc-900 hover:bg-zinc-800/80
+        border-zinc-800 ${cfg.hoverBorder}
         group focus:outline-none focus:ring-1 focus:ring-zinc-600
       `}
     >
@@ -89,23 +88,13 @@ function SuggestionCard({
         >
           {cfg.label}
         </span>
-        {wasClicked && (
-          <span className="ml-auto text-[10px] text-zinc-600 flex items-center gap-1">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            used
-          </span>
-        )}
       </div>
       <p className="text-sm text-zinc-200 leading-snug group-hover:text-white transition-colors">
         {suggestion.preview}
       </p>
-      {!wasClicked && (
-        <p className={`text-[11px] mt-1.5 ${cfg.color} opacity-60 group-hover:opacity-90 transition-opacity`}>
-          {cfg.detail}
-        </p>
-      )}
+      <p className={`text-[11px] mt-1.5 ${cfg.color} opacity-60 group-hover:opacity-90 transition-opacity`}>
+        {cfg.detail}
+      </p>
     </button>
   );
 }
@@ -115,10 +104,9 @@ export default function SuggestionsPanel({
   isLoading,
   isTranscribing,
   isRecording,
-  nextRefreshIn,
+  nextChunkIn,
   onRefresh,
   onSuggestionClick,
-  clickedIds,
   hasTranscript,
 }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -175,9 +163,9 @@ export default function SuggestionsPanel({
           {isBusy ? busyLabel : "Reload suggestions"}
         </button>
 
-        {nextRefreshIn !== null && (
-          <span className="text-[11px] text-zinc-600 font-mono">
-            auto in {nextRefreshIn}s
+        {nextChunkIn !== null && (
+          <span className="text-[11px] text-zinc-600 font-mono" title="Time until this audio chunk is sent for transcription">
+            next chunk ~{nextChunkIn}s
           </span>
         )}
       </div>
@@ -211,62 +199,63 @@ export default function SuggestionsPanel({
 
         {batches.length === 0 && !isBusy && (
           <p className="text-zinc-600 text-sm italic text-center mt-8">
-            {hasTranscript
-              ? "Suggestions will appear after the next refresh."
-              : isRecording
-              ? "Recording… first suggestions appear in ~20s."
+            {isRecording
+              ? "Recording… suggestions will appear after first transcript chunk."
               : "Suggestions appear here once recording starts."}
           </p>
         )}
 
-        {/* Most recent batch first */}
-        {[...batches].reverse().map((batch, batchIdx) => (
-          <div key={batch.id}>
-            <button
-              onClick={() => toggleBatch(batch.id)}
-              className="flex items-center gap-2 mb-2 w-full text-left group"
-            >
-              <span className="text-[11px] font-mono text-zinc-600">
-                {formatTimestamp(batch.timestamp)}
-              </span>
-              {batchIdx === 0 && (
-                <span className="text-[10px] font-bold tracking-widest text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 px-1.5 py-0.5 rounded uppercase">
-                  Latest
-                </span>
-              )}
-              <svg
-                className={`w-3 h-3 text-zinc-600 ml-auto transition-transform ${
-                  collapsed.has(batch.id) ? "-rotate-90" : ""
-                }`}
-                fill="currentColor"
-                viewBox="0 0 20 20"
+        {/* Most recent batch first — older batches progressively faded */}
+        {[...batches].reverse().map((batch, batchIdx) => {
+          const opacity = batchIdx === 0 ? "opacity-100" : "opacity-40";
+
+          return (
+            <div key={batch.id} className={`transition-opacity ${opacity}`}>
+              <button
+                onClick={() => toggleBatch(batch.id)}
+                className="flex items-center gap-2 mb-2 w-full text-left group"
               >
-                <path
-                  fillRule="evenodd"
-                  d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </button>
-
-            {!collapsed.has(batch.id) && (
-              <div className="space-y-2">
-                {batch.suggestions.map((s) => (
-                  <SuggestionCard
-                    key={s.id}
-                    suggestion={s}
-                    onClick={() => onSuggestionClick(s)}
-                    wasClicked={clickedIds.has(s.id)}
+                <span className="text-[11px] font-mono text-zinc-600">
+                  {formatTimestamp(batch.timestamp)}
+                </span>
+                {batchIdx === 0 && (
+                  <span className="text-[10px] font-bold tracking-widest text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 px-1.5 py-0.5 rounded uppercase">
+                    Latest
+                  </span>
+                )}
+                <svg
+                  className={`w-3 h-3 text-zinc-600 ml-auto transition-transform ${
+                    collapsed.has(batch.id) ? "-rotate-90" : ""
+                  }`}
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                    clipRule="evenodd"
                   />
-                ))}
-              </div>
-            )}
+                </svg>
+              </button>
 
-            {batchIdx < batches.length - 1 && (
-              <div className="border-b border-zinc-800/60 mt-4" />
-            )}
-          </div>
-        ))}
+              {!collapsed.has(batch.id) && (
+                <div className="space-y-2">
+                  {batch.suggestions.map((s) => (
+                    <SuggestionCard
+                      key={s.id}
+                      suggestion={s}
+                      onClick={() => onSuggestionClick(s)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {batchIdx < batches.length - 1 && (
+                <div className="border-b border-zinc-800/60 mt-4" />
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

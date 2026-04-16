@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       file: audio,
       model,
       response_format: "json",
-      language: "en",
+      // Omit language so Whisper can infer (better for multilingual / mixed meetings)
     });
 
     return NextResponse.json({ text: transcription.text });

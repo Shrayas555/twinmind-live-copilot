@@ -63,7 +63,7 @@ export default function TranscriptPanel({
             w-14 h-14 rounded-full flex items-center justify-center transition-all duration-200
             ${isRecording
               ? "bg-red-500 hover:bg-red-600 shadow-lg shadow-red-500/30 animate-pulse"
-              : "bg-zinc-700 hover:bg-zinc-600"
+              : "bg-blue-600 hover:bg-blue-500 shadow-md shadow-blue-600/25"
             }
             disabled:opacity-40 disabled:cursor-not-allowed
           `}
@@ -86,8 +86,8 @@ export default function TranscriptPanel({
           {!hasApiKey
             ? "Add a Groq API key in Settings to start."
             : isRecording
-            ? "Recording · chunks every ~30s"
-            : "Click mic to start. Transcript appends every ~30s."}
+            ? "Recording · suggestions refresh after each chunk"
+            : "Click mic to start. Transcript appends every ~30s (first chunk sooner)."}
         </p>
       </div>
 

@@ -117,12 +117,8 @@ export default function ErrorBanner({ message, onDismiss }: Props) {
   const parsed = parseMessage(message);
   const styles = KIND_STYLES[parsed.kind];
 
-  // Live countdown for rate limit errors
+  // Live countdown for rate limit errors (parent should key by message so this resets on new errors)
   const [countdown, setCountdown] = useState<number | null>(parsed.retrySeconds);
-
-  useEffect(() => {
-    setCountdown(parsed.retrySeconds);
-  }, [parsed.retrySeconds]);
 
   useEffect(() => {
     if (countdown === null || countdown <= 0) return;

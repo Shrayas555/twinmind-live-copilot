@@ -103,7 +103,10 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
               </Field>
               <div className="text-xs text-zinc-500 bg-zinc-800/50 rounded-lg p-3 space-y-1">
                 <p>Get a free API key at <span className="text-zinc-300 font-mono">console.groq.com</span></p>
-                <p>Your key is used client-side and never sent to our servers.</p>
+                <p>
+                  Saved in your browser only. Sent to this app&apos;s API routes to call Groq — not stored on a
+                  server.
+                </p>
               </div>
             </>
           )}
@@ -182,7 +185,7 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
               </Field>
               <Field
                 label="Detailed Answer Context Window (words)"
-                hint="Words of transcript sent when a suggestion is clicked. Default: 3000 (effectively full transcript)."
+                hint="Words of transcript included when a suggestion is clicked or for typed chat. Default: 3000."
               >
                 <NumberInput value={local.detailedAnswerContextWords} onChange={(v) => set("detailedAnswerContextWords", v)} min={100} max={10000} />
               </Field>

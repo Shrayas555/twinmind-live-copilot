@@ -25,17 +25,16 @@ export default function Home() {
   const [suggestionBatches, setSuggestionBatches] = useState<SuggestionBatch[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
-  const [clickedSuggestionIds, setClickedSuggestionIds] = useState<Set<string>>(new Set());
   const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(false);
   const [isChatStreaming, setIsChatStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
-  const [nextRefreshIn, setNextRefreshIn] = useState<number | null>(null);
+  /** Seconds until the current audio chunk ends (~next transcript append). */
+  const [nextChunkIn, setNextChunkIn] = useState<number | null>(null);
+  const [chunkTick, setChunkTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
 
   const transcriptRef = useRef<TranscriptChunk[]>([]);
-  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isRecordingRef = useRef(false);
   const settingsRef = useRef(settings);
 
@@ -74,10 +73,10 @@ export default function Home() {
     // Last 4 sentences — explicit spotlight so the model immediately sees what was JUST said
     const lastExchange = getLastExchange(transcript, 4);
 
-    // Collect previews from the last 3 batches to prevent repetition
+    // Last 3 batches (max 9 previews) — enough anti-repetition without a huge blocklist.
     const recentBatches = suggestionBatchesRef.current.slice(-3);
     const previousPreviews = recentBatches.flatMap((b) =>
-      b.suggestions.map((s) => s.preview)
+      b.suggestions.map((s) => s.preview).filter(Boolean)
     );
 
     try {
@@ -101,6 +100,11 @@ export default function Home() {
       }
 
       const data = await res.json();
+      if (data.parseError) {
+        // Model output couldn't be parsed as JSON — log silently, will retry next chunk
+        console.warn("[suggestions] Parse error — JSON extraction failed. Will retry on next chunk.");
+        return;
+      }
       if (data.suggestions?.length > 0) {
         const batch: SuggestionBatch = {
           id: genId(),
@@ -118,68 +122,61 @@ export default function Home() {
     }
   }, []);
 
-  // ── Auto-refresh timer ────────────────────────────────────────────────────
+  // ── Chunk countdown (aligned with MediaRecorder segment length) ───────────
 
-  const stopRefreshTimer = useCallback(() => {
-    if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    refreshTimerRef.current = null;
-    countdownRef.current = null;
-    setNextRefreshIn(null);
-  }, []);
-
-  const startRefreshTimer = useCallback(() => {
-    stopRefreshTimer();
-    const interval = settingsRef.current.autoRefreshInterval;
-    setNextRefreshIn(interval);
-
-    let remaining = interval;
-    countdownRef.current = setInterval(() => {
-      remaining -= 1;
-      setNextRefreshIn(remaining > 0 ? remaining : interval);
-      if (remaining <= 0) remaining = interval;
-    }, 1000);
-
-    refreshTimerRef.current = setInterval(() => {
-      if (!isRecordingRef.current) return;
-      // Skip auto-refresh if less than ~150 chars of new transcript since the last batch
-      // (~30 words / ~14s of speech). Prevents wasted API calls during pauses.
-      // Manual refresh always bypasses this check.
-      const fullTranscript = transcriptRef.current.map((c) => c.text).join(" ");
-      const lastBatch = suggestionBatchesRef.current.slice(-1)[0];
-      const newChars = lastBatch
-        ? fullTranscript.length - lastBatch.transcriptLength
-        : fullTranscript.length;
-      if (newChars >= 150) generateSuggestions();
-    }, interval * 1000);
-  }, [stopRefreshTimer, generateSuggestions]);
-
-  // ── Audio recorder ────────────────────────────────────────────────────────
+  const chunkEndAtRef = useRef<number | null>(null);
 
   const handleChunkTranscribed = useCallback(
     (text: string) => {
       const chunk: TranscriptChunk = { id: genId(), text, timestamp: Date.now() };
-      setTranscriptChunks((prev) => {
-        const updated = [...prev, chunk];
-        transcriptRef.current = updated; // ref updated synchronously before generateSuggestions reads it
-        return updated;
-      });
-      // transcriptRef.current is already updated above — generateSuggestions reads it directly.
-      // Also reset the auto-refresh timer so it counts 30s from THIS chunk, not from when
-      // recording started — prevents a redundant auto-refresh firing seconds after a chunk update.
+      // Update ref BEFORE calling generateSuggestions — React's state updater runs during
+      // reconciliation (deferred), so we cannot rely on the setState callback to update
+      // transcriptRef synchronously. generateSuggestions reads transcriptRef directly.
+      transcriptRef.current = [...transcriptRef.current, chunk];
+      setTranscriptChunks(transcriptRef.current);
       generateSuggestions();
-      if (isRecordingRef.current) startRefreshTimer();
     },
-    [generateSuggestions, startRefreshTimer]
+    [generateSuggestions]
   );
+
+  const onRecorderChunkStarted = useCallback(({ durationSec }: { durationSec: number }) => {
+    chunkEndAtRef.current = Date.now() + durationSec * 1000;
+    setChunkTick((t) => t + 1);
+  }, []);
 
   const { isRecording, isTranscribing, startRecording, stopRecording, flushChunk } = useAudioRecorder({
     apiKey: settings.groqApiKey,
     model: settings.transcriptionModel,
     chunkDuration: settings.autoRefreshInterval,
     onChunkTranscribed: handleChunkTranscribed,
+    onChunkStarted: onRecorderChunkStarted,
     onError: setError,
   });
+
+  useEffect(() => {
+    if (!isRecording) {
+      chunkEndAtRef.current = null;
+      setNextChunkIn(null);
+      return;
+    }
+    if (isTranscribing) {
+      setNextChunkIn(null);
+      return;
+    }
+
+    const tick = () => {
+      const end = chunkEndAtRef.current;
+      if (end == null) {
+        setNextChunkIn(null);
+        return;
+      }
+      setNextChunkIn(Math.max(0, Math.ceil((end - Date.now()) / 1000)));
+    };
+
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [isRecording, isTranscribing, chunkTick]);
 
   useEffect(() => {
     isRecordingRef.current = isRecording;
@@ -188,15 +185,13 @@ export default function Home() {
   const handleStartRecording = useCallback(async () => {
     setError(null);
     await startRecording();
-    startRefreshTimer();
-  }, [startRecording, startRefreshTimer]);
+  }, [startRecording]);
 
   const handleStopRecording = useCallback(() => {
+    chunkEndAtRef.current = null;
+    setNextChunkIn(null);
     stopRecording();
-    stopRefreshTimer();
-  }, [stopRecording, stopRefreshTimer]);
-
-  useEffect(() => () => stopRefreshTimer(), [stopRefreshTimer]);
+  }, [stopRecording]);
 
   // ── Chat streaming helper ─────────────────────────────────────────────────
 
@@ -300,10 +295,8 @@ export default function Home() {
         content: text,
         timestamp: Date.now(),
       };
-      // Build history — use apiContent where available so prior suggestion clicks
-      // are represented by their full expanded prompt, not just the short preview
       const history = [
-        ...chatMessages.map((m) => ({ role: m.role, content: m.apiContent ?? m.content })),
+        ...chatMessages.map((m) => ({ role: m.role, content: m.content })),
         { role: "user" as const, content: text },
       ];
       streamChat(history, userMsg);
@@ -339,18 +332,13 @@ export default function Home() {
         fromSuggestionType: suggestion.type,    // for the type badge in chat
       };
 
-      // History: previous messages using apiContent where available (preserves full context
-      // for prior suggestion clicks) + this new detailed prompt as the current user turn
+      // History: use short display content for prior turns so the context doesn't balloon
+      // (each apiContent embeds 1500 words of transcript — after 3 clicks that's 4500 extra tokens).
+      // Only the CURRENT turn gets the full detailed prompt with transcript context.
       const history = [
-        ...chatMessages.map((m) => ({ role: m.role, content: m.apiContent ?? m.content })),
+        ...chatMessages.map((m) => ({ role: m.role, content: m.content })),
         { role: "user" as const, content: detailedUserContent },
       ];
-
-      setClickedSuggestionIds((prev) => {
-        const next = new Set(prev);
-        next.add(suggestion.id);
-        return next;
-      });
 
       // transcriptAlreadyInMessage=true: detailed answer prompt already embeds the full transcript
       // so skip re-embedding it in the system prompt (avoids ~6000 words of duplicate context)
@@ -464,7 +452,9 @@ export default function Home() {
       </header>
 
       {/* Error banner */}
-      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+      {error && (
+        <ErrorBanner key={error} message={error} onDismiss={() => setError(null)} />
+      )}
 
       {/* 3-column layout */}
       <div className="flex-1 flex overflow-hidden min-h-0">
@@ -484,21 +474,17 @@ export default function Home() {
             isLoading={isSuggestionsLoading}
             isTranscribing={isTranscribing}
             isRecording={isRecording}
-            nextRefreshIn={nextRefreshIn}
+            nextChunkIn={nextChunkIn}
             onRefresh={() => {
-              // If recording, flush the current audio chunk (transcribes it, then triggers
-              // generateSuggestions via onChunkTranscribed) and reset the auto-refresh countdown
-              // so the next auto-refresh is a full interval from now.
-              // If not recording, generate directly from existing transcript.
+              // Recording: flush partial audio → transcribe → append chunk → suggestions.
+              // Idle: regenerate suggestions from the transcript already on screen.
               if (isRecording) {
                 flushChunk();
-                startRefreshTimer();
               } else {
                 generateSuggestions();
               }
             }}
             onSuggestionClick={handleSuggestionClick}
-            clickedIds={clickedSuggestionIds}
             hasTranscript={transcriptChunks.length > 0}
           />
         </div>

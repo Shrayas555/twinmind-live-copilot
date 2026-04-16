@@ -25,9 +25,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   chatSystemPrompt: DEFAULT_CHAT_PROMPT,
   // Last ~600 words for suggestions — ~3 minutes of speech, enough for recency without diluting signal
   suggestionsContextWords: 600,
-  // 1500 words for detailed answers — ~7-8 min of speech, enough for rich answers
-  // without doubling input tokens (and latency) vs 3000
-  detailedAnswerContextWords: 1500,
+  // ~3000 words ≈ full meeting context for click-to-expand answers (assignment default)
+  detailedAnswerContextWords: 3000,
   // Auto-refresh every 30 seconds
   autoRefreshInterval: 30,
 };

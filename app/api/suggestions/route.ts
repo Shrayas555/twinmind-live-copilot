@@ -5,6 +5,7 @@ import {
   DEFAULT_SUGGESTIONS_SYSTEM,
   DEFAULT_SUGGESTIONS_USER_TEMPLATE,
 } from "@/lib/defaults";
+import { DEFAULT_SUGGESTIONS_PROMPT } from "@/lib/prompts";
 import type { Suggestion, SuggestionType } from "@/lib/types";
 import { genId } from "@/lib/defaults";
 import { parseGroqError, groqErrorStatus } from "@/lib/groqError";
@@ -23,14 +24,14 @@ const VALID_TYPES: SuggestionType[] = [
   "CLARIFICATION",
 ];
 
-// Minimum words before generating suggestions — 30s of typical speech ≈ 35-40 words;
-// set to 20 so slow speakers still get suggestions after the first chunk
-const MIN_TRANSCRIPT_WORDS = 20;
+// Minimum words before generating suggestions — set low so the first 15s chunk
+// (which may have only 5-10 words if the user started speaking mid-chunk) still fires.
+const MIN_TRANSCRIPT_WORDS = 5;
 
 function buildPreviousSuggestionsBlock(previousPreviews: string[]): string {
   if (!previousPreviews.length) return "";
   const items = previousPreviews.map((p) => `• ${p}`).join("\n");
-  return `ALREADY SURFACED — do NOT repeat these angles, find fresh ones:\n${items}\n\n`;
+  return `⛔ ALREADY SHOWN — these angles are USED UP. Do NOT repeat or rephrase any of them. Every suggestion below must be genuinely new:\n${items}\n\n`;
 }
 
 /**
@@ -52,36 +53,53 @@ function splitPrompt(combinedPrompt: string): { system: string; userTemplate: st
 
 /**
  * Robustly extracts a SuggestionRaw[] from model output.
- * Handles: plain JSON array, {suggestions:[]} wrapper, JSON embedded in prose,
- * and the failed_generation field Groq returns on json_validate_failed errors.
+ *
+ * Uses indexOf/lastIndexOf instead of regex for JSON boundary detection —
+ * regex with non-greedy `*?` stops at the first `]` it finds, which breaks
+ * when preview text contains square brackets (e.g. the system prompt's own
+ * QUESTION example: "How long on [vendor]..."). indexOf/lastIndexOf finds the
+ * true outermost boundaries regardless of bracket characters inside strings.
+ *
+ * Handles: plain JSON object with suggestions key, plain JSON array,
+ * JSON embedded in prose, JSON wrapped in markdown code fences.
  */
 function extractSuggestions(text: string): SuggestionRaw[] {
   if (!text?.trim()) return [];
 
-  // 1. Try direct parse
+  // Strip markdown code fences — model sometimes outputs ```json ... ```
+  const cleaned = text
+    .replace(/^```(?:json|JSON)?\s*\n?/m, "")
+    .replace(/\n?```\s*$/m, "")
+    .trim();
+
+  // 1. Try direct parse of the cleaned text
   try {
-    const outer = JSON.parse(text);
+    const outer = JSON.parse(cleaned);
     if (Array.isArray(outer)) return outer;
     if (Array.isArray(outer.suggestions)) return outer.suggestions;
     if (Array.isArray(outer.data)) return outer.data;
   } catch { /* fall through */ }
 
-  // 2. Find and parse the first JSON array in the text (model wrapped in prose)
-  const arrayMatch = text.match(/\[[\s\S]*?\]/);
-  if (arrayMatch) {
+  // 2. Find outermost JSON object via indexOf/lastIndexOf — handles ] or } in string values.
+  //    Try object before array because the prompt instructs {"suggestions": [...]} format.
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
     try {
-      const arr = JSON.parse(arrayMatch[0]);
-      if (Array.isArray(arr)) return arr;
+      const obj = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+      if (Array.isArray(obj.suggestions)) return obj.suggestions;
+      if (Array.isArray(obj.data)) return obj.data;
+      if (Array.isArray(obj)) return obj;
     } catch { /* fall through */ }
   }
 
-  // 3. Find and parse the first JSON object (might contain suggestions key)
-  const objectMatch = text.match(/\{[\s\S]*\}/);
-  if (objectMatch) {
+  // 3. Find outermost JSON array via indexOf/lastIndexOf (fallback for bare arrays)
+  const firstBracket = cleaned.indexOf("[");
+  const lastBracket = cleaned.lastIndexOf("]");
+  if (firstBracket !== -1 && lastBracket > firstBracket) {
     try {
-      const obj = JSON.parse(objectMatch[0]);
-      if (Array.isArray(obj.suggestions)) return obj.suggestions;
-      if (Array.isArray(obj.data)) return obj.data;
+      const arr = JSON.parse(cleaned.slice(firstBracket, lastBracket + 1));
+      if (Array.isArray(arr)) return arr;
     } catch { /* fall through */ }
   }
 
@@ -115,7 +133,7 @@ export async function POST(req: NextRequest) {
     const groq = new Groq({ apiKey });
 
     const previousSuggestionsBlock = buildPreviousSuggestionsBlock(previousPreviews ?? []);
-    const { system, userTemplate } = splitPrompt(systemPrompt ?? DEFAULT_SUGGESTIONS_SYSTEM);
+    const { system, userTemplate } = splitPrompt(systemPrompt ?? DEFAULT_SUGGESTIONS_PROMPT);
 
     const userMessage = (userTemplate || DEFAULT_SUGGESTIONS_USER_TEMPLATE)
       .replace("{transcript}", transcript)
@@ -145,8 +163,9 @@ export async function POST(req: NextRequest) {
     const parsed = extractSuggestions(rawContent);
 
     if (!parsed.length) {
-      console.error("[suggestions] Could not extract suggestions from:", rawContent.slice(0, 300));
-      return NextResponse.json({ suggestions: [] });
+      console.error("[suggestions] JSON extraction failed. Raw output:", rawContent.slice(0, 400));
+      // Return a parse-error flag so the client can surface it rather than silently drop the batch
+      return NextResponse.json({ suggestions: [], parseError: true });
     }
 
     const suggestions: Suggestion[] = parsed

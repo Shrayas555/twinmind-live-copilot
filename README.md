@@ -26,6 +26,27 @@ npm run dev   # → http://localhost:3000
 
 ---
 
+## Deploy (Vercel)
+
+No server-side secrets: users paste their Groq key in the app. Deploy as a standard Next.js project.
+
+1. Push the `twinmind-live` folder to a GitHub repo (or use the Vercel CLI below).
+2. In [vercel.com](https://vercel.com) → **Add New** → **Project** → import the repo. Framework: **Next.js** (auto-detected).
+3. Leave **Environment Variables** empty unless you add your own later.
+4. **Deploy**. Production URL will be `https://<project>.vercel.app`.
+
+**CLI (from this directory):**
+
+```bash
+cd twinmind-live
+npm install
+npx vercel deploy --prod
+```
+
+Follow the prompts to link/create a project. Subsequent deploys: `npx vercel deploy --prod`.
+
+---
+
 ## Stack
 
 | Layer | Choice | Why |
@@ -72,13 +93,13 @@ Blobs smaller than 1 KB are skipped — they are silence and cause Whisper error
 
 ### Suggestion generation strategy
 
-Every time a transcript chunk arrives, suggestions regenerate. An independent 30-second timer also fires while recording as a fallback (decoupled from chunk timing).
+Every time a transcript chunk arrives, suggestions regenerate. The middle-column **“next chunk ~Xs”** timer tracks the active `MediaRecorder` segment (15s for the first chunk, then your configured interval, default 30s) so it matches when the next transcript append will land — not a fake loop.
 
 **Context strategy — two-tier window:** The opening 60 words set meeting type ("Hi, this is Sarah from Acme…" → sales call). The recent 600 words are what's actionable right now. Both are sent together so the model has context for both "what kind of meeting" and "what just happened."
 
 **Last exchange spotlight:** `getLastExchange()` extracts the last 4 sentences (80-word fallback for unpunctuated Whisper output) as a dedicated section. The model triages on this first — not a rolling average of the transcript.
 
-**Skip-when-quiet:** Auto-refresh is skipped if fewer than 150 chars of new speech have been added since the last batch. Avoids wasted API calls during natural pauses while still firing the moment the conversation picks back up.
+**Anti-repetition:** The last **three** suggestion batches’ preview lines are sent as `previousPreviews` so the model avoids repeating the same angles while keeping the blocklist small enough that later batches stay creative.
 
 **Type selection:** The prompt gives the model five types — `QUESTION`, `TALKING_POINT`, `ANSWER`, `FACT_CHECK`, `CLARIFICATION` — and a decision tree for choosing the mix:
 - Someone just asked a question → `ANSWER` takes priority
@@ -86,7 +107,7 @@ Every time a transcript chunk arrives, suggestions regenerate. An independent 30
 - Technical vocabulary or acronyms → `CLARIFICATION`
 - Open discussion with space to speak → `QUESTION` / `TALKING_POINT`
 
-The model picks the mix that fits. Hard rule: if the last exchange contains a question, slot 1 is always `ANSWER`. Anti-repetition: the last 3 batches' previews are passed as `previousPreviews` — model is instructed to find fresh angles each time.
+The model picks the mix that fits. Hard rule: if the last exchange contains a question, slot 1 is always `ANSWER`.
 
 **Preview quality:** The prompt explicitly requires previews to deliver standalone value without clicking. Generic previews like "Ask about the timeline" are useless. Specific ones like "They mentioned Q3 delays — ask for the exact date and what's blocking them" are useful.
 

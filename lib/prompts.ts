@@ -60,13 +60,13 @@ detailPrompt — one targeted sentence for what to drill into when clicked. Spec
   Reference exact names, numbers, or quotes from the transcript. The detailPrompt alone should tell an expert exactly what angle to take.`;
 
 // ─── Suggestions: user message template ──────────────────────────────────────
-export const DEFAULT_SUGGESTIONS_USER_TEMPLATE = `{previousSuggestionsBlock}FULL RECENT CONTEXT:
+export const DEFAULT_SUGGESTIONS_USER_TEMPLATE = `FULL RECENT CONTEXT:
 {transcript}
 
 ▶ LAST EXCHANGE — triage starts HERE:
 {lastExchange}
 
-Based on what was JUST said above, generate 3 suggestions. Return a JSON object with a "suggestions" key — no markdown, no explanation outside the JSON:
+{previousSuggestionsBlock}Generate 3 suggestions based on what was JUST said. Each MUST cover a completely different angle — different type, different topic, different framing. Return ONLY the JSON object below, starting with "{":
 {"suggestions": [
   {"type": "QUESTION|TALKING_POINT|ANSWER|FACT_CHECK|CLARIFICATION", "preview": "≤130 chars, standalone value", "detailPrompt": "One targeted sentence referencing exact names/numbers/quotes from the transcript"},
   {"type": "...", "preview": "...", "detailPrompt": "..."},

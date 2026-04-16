@@ -7,6 +7,8 @@ interface UseAudioRecorderOptions {
   model: string;
   chunkDuration: number; // seconds per chunk
   onChunkTranscribed: (text: string) => void;
+  /** Fired when a new MediaRecorder chunk begins — use for UI countdown until next transcript update. */
+  onChunkStarted?: (info: { durationSec: number }) => void;
   onError: (msg: string) => void;
 }
 
@@ -15,6 +17,7 @@ export function useAudioRecorder({
   model,
   chunkDuration,
   onChunkTranscribed,
+  onChunkStarted,
   onError,
 }: UseAudioRecorderOptions) {
   const [isRecording, setIsRecording] = useState(false);
@@ -85,6 +88,7 @@ export function useAudioRecorder({
       };
 
       recorder.start();
+      onChunkStarted?.({ durationSec: duration });
 
       // Schedule end-of-chunk after the configured (or overridden) duration
       chunkTimerRef.current = setTimeout(() => {
@@ -93,7 +97,7 @@ export function useAudioRecorder({
         }
       }, duration * 1000);
     },
-    [chunkDuration, transcribeBlob]
+    [chunkDuration, transcribeBlob, onChunkStarted]
   );
 
   const startRecording = useCallback(async () => {
@@ -104,7 +108,9 @@ export function useAudioRecorder({
       streamRef.current = stream;
       isRecordingRef.current = true;
       setIsRecording(true);
-      startChunk(stream);
+      // First chunk is capped at 15s so the first suggestions appear quickly.
+      // Subsequent chunks run at the full chunkDuration (default 30s) via onstop.
+      startChunk(stream, Math.min(chunkDuration, 15));
     } catch (e) {
       if (e instanceof DOMException) {
         if (e.name === "NotAllowedError") {
@@ -120,7 +126,7 @@ export function useAudioRecorder({
         onError(e instanceof Error ? e.message : "Mic access denied");
       }
     }
-  }, [startChunk, onError]);
+  }, [startChunk, onError, chunkDuration]);
 
   const stopRecording = useCallback(() => {
     isRecordingRef.current = false;
