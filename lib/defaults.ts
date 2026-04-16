@@ -9,9 +9,10 @@ import {
 export { DEFAULT_SUGGESTIONS_SYSTEM, DEFAULT_SUGGESTIONS_USER_TEMPLATE };
 import type { AppSettings } from "./types";
 
-// Best available open model on Groq. Check console.groq.com/docs/models for your tier.
-export const GROQ_SUGGESTIONS_MODEL = "llama-3.3-70b-versatile";
-export const GROQ_CHAT_MODEL = "llama-3.3-70b-versatile";
+// Required by the TwinMind assignment spec: GPT-OSS 120B on Groq.
+// Falls back to llama-3.3-70b-versatile in Settings if your tier lacks access.
+export const GROQ_SUGGESTIONS_MODEL = "openai/gpt-oss-120b";
+export const GROQ_CHAT_MODEL = "openai/gpt-oss-120b";
 export const GROQ_TRANSCRIPTION_MODEL = "whisper-large-v3";
 
 export const DEFAULT_SETTINGS: AppSettings = {

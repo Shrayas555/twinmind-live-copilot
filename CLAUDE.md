@@ -27,7 +27,7 @@ Header: Export button + Settings gear icon.
 
 - **Next.js 16** App Router, TypeScript, Tailwind CSS
 - **Groq Whisper Large V3** — audio transcription
-- **Groq `llama-3.3-70b-versatile`** — suggestions + chat
+- **Groq `openai/gpt-oss-120b`** — suggestions + chat (required by assignment spec; fallback: `llama-3.3-70b-versatile`)
 - **Vercel** — deployment
 - **GitHub** — `Shrayas555/twinmind-live-copilot` (public repo)
 
@@ -93,7 +93,7 @@ committed to `chatMessages` state.
 |---------|---------|---------|
 | groqApiKey | "" | Stored in localStorage, passed in request bodies |
 | transcriptionModel | `whisper-large-v3` | Groq Whisper model |
-| suggestionsModel | `llama-3.3-70b-versatile` | LLM for suggestions |
+| suggestionsModel | `openai/gpt-oss-120b` | LLM for suggestions (assignment-required model) |
 | chatModel | same | LLM for chat |
 | suggestionsSystemPrompt | see lib/prompts.ts | Full prompt with `{transcript}` placeholder |
 | detailedAnswerPrompt | see lib/prompts.ts | `{transcript}` `{type}` `{preview}` `{detailPrompt}` |

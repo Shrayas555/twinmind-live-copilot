@@ -134,8 +134,9 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
               <Field label="Chat Model" hint="Model used for detailed answers and chat.">
                 <TextInput value={local.chatModel} onChange={(v) => set("chatModel", v)} mono />
               </Field>
-              <div className="text-xs text-zinc-500 bg-zinc-800/50 rounded-lg p-3">
-                <p>Recommended: <span className="text-zinc-300 font-mono">llama-3.3-70b-versatile</span></p>
+              <div className="text-xs text-zinc-500 bg-zinc-800/50 rounded-lg p-3 space-y-1">
+                <p>Required: <span className="text-zinc-300 font-mono">openai/gpt-oss-120b</span></p>
+                <p>Fallback if your tier lacks access: <span className="text-zinc-400 font-mono">llama-3.3-70b-versatile</span></p>
               </div>
             </>
           )}
@@ -175,7 +176,7 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
             <>
               <Field
                 label="Suggestions Context Window (words)"
-                hint="Number of recent transcript words sent when generating suggestions. Larger = more context, slower. Default: 500."
+                hint="Number of recent transcript words sent when generating suggestions. Larger = more context, slower. Default: 600."
               >
                 <NumberInput value={local.suggestionsContextWords} onChange={(v) => set("suggestionsContextWords", v)} min={100} max={2000} />
               </Field>
