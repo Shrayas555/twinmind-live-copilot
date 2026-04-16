@@ -164,10 +164,13 @@ export default function Home() {
         transcriptRef.current = updated; // ref updated synchronously before generateSuggestions reads it
         return updated;
       });
-      // transcriptRef.current is already updated above — generateSuggestions reads it directly
+      // transcriptRef.current is already updated above — generateSuggestions reads it directly.
+      // Also reset the auto-refresh timer so it counts 30s from THIS chunk, not from when
+      // recording started — prevents a redundant auto-refresh firing seconds after a chunk update.
       generateSuggestions();
+      if (isRecordingRef.current) startRefreshTimer();
     },
-    [generateSuggestions]
+    [generateSuggestions, startRefreshTimer]
   );
 
   const { isRecording, isTranscribing, startRecording, stopRecording, flushChunk } = useAudioRecorder({
