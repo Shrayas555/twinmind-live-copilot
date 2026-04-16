@@ -133,7 +133,16 @@ export default function Home() {
     }, 1000);
 
     refreshTimerRef.current = setInterval(() => {
-      if (isRecordingRef.current) generateSuggestions();
+      if (!isRecordingRef.current) return;
+      // Skip auto-refresh if less than ~150 chars of new transcript since the last batch
+      // (~30 words / ~14s of speech). Prevents wasted API calls during pauses.
+      // Manual refresh always bypasses this check.
+      const fullTranscript = transcriptRef.current.map((c) => c.text).join(" ");
+      const lastBatch = suggestionBatchesRef.current.slice(-1)[0];
+      const newChars = lastBatch
+        ? fullTranscript.length - lastBatch.transcriptLength
+        : fullTranscript.length;
+      if (newChars >= 150) generateSuggestions();
     }, interval * 1000);
   }, [stopRefreshTimer, generateSuggestions]);
 
