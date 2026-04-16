@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, SuggestionType } from "@/lib/types";
 import { formatTimestamp } from "@/lib/defaults";
 
 interface Props {
@@ -11,20 +11,32 @@ interface Props {
   onSend: (text: string) => void;
 }
 
+// Mirrors TYPE_CONFIG in SuggestionsPanel — keeps badge style consistent
+const TYPE_BADGE: Record<SuggestionType, { label: string; color: string; bg: string; border: string }> = {
+  QUESTION:      { label: "Question",      color: "text-sky-400",    bg: "bg-sky-400/10",    border: "border-sky-400/30" },
+  TALKING_POINT: { label: "Talking Point", color: "text-violet-400", bg: "bg-violet-400/10", border: "border-violet-400/30" },
+  ANSWER:        { label: "Answer",        color: "text-emerald-400",bg: "bg-emerald-400/10",border: "border-emerald-400/30" },
+  FACT_CHECK:    { label: "Fact Check",    color: "text-amber-400",  bg: "bg-amber-400/10",  border: "border-amber-400/30" },
+  CLARIFICATION: { label: "Clarification", color: "text-rose-400",   bg: "bg-rose-400/10",   border: "border-rose-400/30" },
+};
+
 export default function ChatPanel({ messages, isStreaming, streamingContent, onSend }: Props) {
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll on new messages / streaming updates
+  // Scroll on new messages, streaming tokens, or when "Thinking…" appears
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingContent]);
+  }, [messages, streamingContent, isStreaming]);
 
   const handleSend = () => {
     const text = input.trim();
     if (!text || isStreaming) return;
     setInput("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
     onSend(text);
   };
 
@@ -35,7 +47,6 @@ export default function ChatPanel({ messages, isStreaming, streamingContent, onS
     }
   };
 
-  // Auto-resize textarea
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
     if (textareaRef.current) {
@@ -68,7 +79,10 @@ export default function ChatPanel({ messages, isStreaming, streamingContent, onS
         )}
 
         {messages.map((msg) => (
-          <div key={msg.id} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
+          <div
+            key={msg.id}
+            className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
+          >
             <div
               className={`
                 max-w-[90%] rounded-lg px-3 py-2.5 text-sm leading-relaxed
@@ -78,14 +92,18 @@ export default function ChatPanel({ messages, isStreaming, streamingContent, onS
                 }
               `}
             >
-              {msg.fromSuggestion && (
-                <p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase mb-1">
-                  From suggestion
-                </p>
-              )}
-              <div className="whitespace-pre-wrap prose-invert">
-                <MarkdownText text={msg.content} />
-              </div>
+              {/* Suggestion-click: show type badge instead of plain "FROM SUGGESTION" */}
+              {msg.fromSuggestionType && (() => {
+                const cfg = TYPE_BADGE[msg.fromSuggestionType];
+                return (
+                  <span
+                    className={`inline-block text-[10px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded border mb-1.5 ${cfg.bg} ${cfg.color} ${cfg.border}`}
+                  >
+                    {cfg.label}
+                  </span>
+                );
+              })()}
+              <MarkdownText text={msg.content} />
             </div>
             <span className="text-[10px] text-zinc-600 font-mono mt-0.5 px-1">
               {formatTimestamp(msg.timestamp)}
@@ -98,10 +116,10 @@ export default function ChatPanel({ messages, isStreaming, streamingContent, onS
           <div className="flex flex-col items-start">
             <div className="max-w-[90%] rounded-lg px-3 py-2.5 text-sm leading-relaxed bg-zinc-800/80 text-zinc-200 border border-zinc-700/50">
               {streamingContent ? (
-                <div className="whitespace-pre-wrap">
+                <>
                   <MarkdownText text={streamingContent} />
                   <span className="inline-block w-1.5 h-4 bg-zinc-400 animate-pulse ml-0.5 -mb-0.5" />
-                </div>
+                </>
               ) : (
                 <span className="text-zinc-500 italic">Thinking…</span>
               )}
@@ -153,28 +171,73 @@ export default function ChatPanel({ messages, isStreaming, streamingContent, onS
   );
 }
 
-/** Minimal markdown renderer for bold + bullet lists */
+/**
+ * Markdown renderer for AI responses.
+ * Handles: **bold**, • / - / * bullets, 1. numbered lists, blank line spacing.
+ * Whisper + LLM responses use Unicode • bullets — these are the most important to catch.
+ */
 function MarkdownText({ text }: { text: string }) {
   const lines = text.split("\n");
+
   return (
-    <>
+    <div>
       {lines.map((line, i) => {
-        const isBullet = /^[-*]\s/.test(line);
-        const content = isBullet ? line.replace(/^[-*]\s/, "") : line;
-        const parts = content.split(/(\*\*[^*]+\*\*)/g);
-        const rendered = parts.map((part, j) => {
-          if (/^\*\*.*\*\*$/.test(part)) {
-            return <strong key={j} className="text-white">{part.slice(2, -2)}</strong>;
-          }
-          return <span key={j}>{part}</span>;
-        });
+        const isEmpty = line.trim() === "";
+        const isBullet = /^[•\-*]\s/.test(line);
+        const isNumbered = /^\d+\.\s/.test(line);
+
+        // Collapse consecutive blank lines into a single small gap
+        if (isEmpty) {
+          const prevWasEmpty = i > 0 && lines[i - 1].trim() === "";
+          return prevWasEmpty ? null : <div key={i} className="h-2" />;
+        }
+
+        let content = line;
+        if (isBullet) content = line.replace(/^[•\-*]\s/, "");
+        if (isNumbered) content = line.replace(/^\d+\.\s/, "");
+        const numPrefix = isNumbered ? (line.match(/^(\d+)\./)?.[1] ?? "") : "";
+
+        const rendered = renderInline(content);
+
+        if (isBullet) {
+          return (
+            <div key={i} className="flex gap-2 items-start mt-0.5">
+              <span className="text-zinc-400 shrink-0 mt-px leading-snug">•</span>
+              <span className="flex-1 leading-snug">{rendered}</span>
+            </div>
+          );
+        }
+
+        if (isNumbered) {
+          return (
+            <div key={i} className="flex gap-2 items-start mt-0.5">
+              <span className="text-zinc-400 font-mono text-xs shrink-0 mt-px w-4 text-right leading-snug">
+                {numPrefix}.
+              </span>
+              <span className="flex-1 leading-snug">{rendered}</span>
+            </div>
+          );
+        }
+
         return (
-          <p key={i} className={isBullet ? "flex gap-1.5" : ""}>
-            {isBullet && <span className="text-zinc-500 mt-0.5">•</span>}
-            <span>{rendered}</span>
+          <p key={i} className="leading-snug mt-0.5 first:mt-0">
+            {rendered}
           </p>
         );
       })}
-    </>
+    </div>
+  );
+}
+
+/** Splits a line on **bold** markers and returns React nodes */
+function renderInline(text: string): React.ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    /^\*\*.*\*\*$/.test(part) ? (
+      <strong key={i} className="text-white font-semibold">
+        {part.slice(2, -2)}
+      </strong>
+    ) : (
+      <span key={i}>{part}</span>
+    )
   );
 }

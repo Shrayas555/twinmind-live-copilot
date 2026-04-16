@@ -277,9 +277,10 @@ export default function Home() {
         content: text,
         timestamp: Date.now(),
       };
-      // Build history including this new message
+      // Build history — use apiContent where available so prior suggestion clicks
+      // are represented by their full expanded prompt, not just the short preview
       const history = [
-        ...chatMessages.map((m) => ({ role: m.role, content: m.content })),
+        ...chatMessages.map((m) => ({ role: m.role, content: m.apiContent ?? m.content })),
         { role: "user" as const, content: text },
       ];
       streamChat(history, userMsg);
@@ -309,14 +310,17 @@ export default function Home() {
       const displayMsg: ChatMessage = {
         id: genId(),
         role: "user",
-        content: suggestion.preview,
+        content: suggestion.preview,            // shown in UI
+        apiContent: detailedUserContent,        // used in API history — full expanded prompt
         timestamp: Date.now(),
         fromSuggestion: suggestion.preview,
+        fromSuggestionType: suggestion.type,    // for the type badge in chat
       };
 
-      // History: all previous chat messages + the detailed prompt as the new user turn
+      // History: previous messages using apiContent where available (preserves full context
+      // for prior suggestion clicks) + this new detailed prompt as the current user turn
       const history = [
-        ...chatMessages.map((m) => ({ role: m.role, content: m.content })),
+        ...chatMessages.map((m) => ({ role: m.role, content: m.apiContent ?? m.content })),
         { role: "user" as const, content: detailedUserContent },
       ];
 
