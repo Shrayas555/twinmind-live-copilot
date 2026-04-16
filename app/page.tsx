@@ -137,7 +137,7 @@ export default function Home() {
     [generateSuggestions]
   );
 
-  const { isRecording, isTranscribing, startRecording, stopRecording } = useAudioRecorder({
+  const { isRecording, isTranscribing, startRecording, stopRecording, flushChunk } = useAudioRecorder({
     apiKey: settings.groqApiKey,
     model: settings.transcriptionModel,
     chunkDuration: settings.autoRefreshInterval,
@@ -403,7 +403,16 @@ export default function Home() {
             batches={suggestionBatches}
             isLoading={isSuggestionsLoading}
             nextRefreshIn={nextRefreshIn}
-            onRefresh={() => generateSuggestions()}
+            onRefresh={() => {
+              // If recording, flush the current audio chunk first (transcribes it),
+              // which will automatically trigger generateSuggestions via onChunkTranscribed.
+              // If not recording, generate directly from existing transcript.
+              if (isRecording) {
+                flushChunk();
+              } else {
+                generateSuggestions();
+              }
+            }}
             onSuggestionClick={handleSuggestionClick}
             hasTranscript={transcriptChunks.length > 0}
           />

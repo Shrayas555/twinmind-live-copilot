@@ -125,5 +125,20 @@ export function useAudioRecorder({
     streamRef.current = null;
   }, []);
 
-  return { isRecording, isTranscribing, startRecording, stopRecording };
+  /**
+   * Force-flushes the current in-progress audio chunk: stops the recorder
+   * (which transcribes the partial chunk and restarts), useful for manual refresh.
+   */
+  const flushChunk = useCallback(() => {
+    if (!isRecordingRef.current || !recorderRef.current) return;
+    if (recorderRef.current.state === "recording") {
+      if (chunkTimerRef.current) {
+        clearTimeout(chunkTimerRef.current);
+        chunkTimerRef.current = null;
+      }
+      recorderRef.current.stop(); // onstop will transcribe and restart via startChunk
+    }
+  }, []);
+
+  return { isRecording, isTranscribing, startRecording, stopRecording, flushChunk };
 }
