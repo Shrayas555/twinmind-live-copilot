@@ -18,8 +18,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   suggestionsSystemPrompt: DEFAULT_SUGGESTIONS_PROMPT,
   detailedAnswerPrompt: DEFAULT_DETAILED_ANSWER_PROMPT,
   chatSystemPrompt: DEFAULT_CHAT_PROMPT,
-  // Last ~500 words of transcript for suggestions (recency matters more than full context)
-  suggestionsContextWords: 500,
+  // Last ~600 words for suggestions — ~3 minutes of speech, enough for recency without diluting signal
+  suggestionsContextWords: 600,
   // Full transcript for detailed answers (the more context, the better the answer)
   detailedAnswerContextWords: 3000,
   // Auto-refresh every 30 seconds
@@ -33,6 +33,27 @@ export function getContextWindow(text: string, maxWords: number): string {
   const words = text.trim().split(/\s+/);
   if (words.length <= maxWords) return text;
   return words.slice(-maxWords).join(" ");
+}
+
+/**
+ * Two-tier context for suggestions:
+ * - Opening scene (first 60 words) sets the topic/type of conversation
+ * - Recent window (last N words) is what matters for what to do right now
+ * Helps the model understand both "what kind of meeting is this" and "what just happened"
+ */
+export function getSuggestionsContext(text: string, recentWords: number): string {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= recentWords) return text;
+
+  const openingWords = 60;
+  const opening = words.slice(0, openingWords).join(" ");
+  const recent = words.slice(-recentWords).join(" ");
+
+  // Only add the opening scene if there's a meaningful gap (>120 words between them)
+  if (words.length > recentWords + openingWords + 120) {
+    return `[Meeting opening] ${opening}\n\n[Recent — focus here] ${recent}`;
+  }
+  return recent;
 }
 
 /** Formats a timestamp as HH:MM:SS */

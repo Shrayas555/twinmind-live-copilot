@@ -10,14 +10,30 @@ interface SuggestionRaw {
   detailPrompt: string;
 }
 
+const VALID_TYPES: SuggestionType[] = [
+  "QUESTION",
+  "TALKING_POINT",
+  "ANSWER",
+  "FACT_CHECK",
+  "CLARIFICATION",
+];
+
+function buildPreviousSuggestionsBlock(previousPreviews: string[]): string {
+  if (!previousPreviews.length) return "";
+  const items = previousPreviews.map((p) => `• ${p}`).join("\n");
+  return `ALREADY SURFACED — do NOT repeat these angles (find fresh ones):\n${items}\n`;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { transcript, systemPrompt, apiKey, model } = body as {
+    const { transcript, systemPrompt, apiKey, model, previousPreviews } = body as {
       transcript: string;
       systemPrompt: string;
       apiKey: string;
       model?: string;
+      // Previews from the last 2 batches so the model avoids repeating the same angles
+      previousPreviews?: string[];
     };
 
     if (!transcript?.trim()) {
@@ -29,40 +45,31 @@ export async function POST(req: NextRequest) {
 
     const groq = new Groq({ apiKey });
 
-    const prompt = systemPrompt.replace("{transcript}", transcript);
+    const previousSuggestionsBlock = buildPreviousSuggestionsBlock(previousPreviews ?? []);
+
+    const prompt = systemPrompt
+      .replace("{transcript}", transcript)
+      .replace("{previousSuggestionsBlock}", previousSuggestionsBlock);
 
     const completion = await groq.chat.completions.create({
       model: model || GROQ_SUGGESTIONS_MODEL,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      temperature: 0.7,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.65,
       max_tokens: 1024,
       response_format: { type: "json_object" },
     });
 
     const raw = completion.choices[0]?.message?.content ?? "[]";
 
-    // The model returns either an array directly or wrapped in an object
     let parsed: SuggestionRaw[];
     try {
       const outer = JSON.parse(raw);
+      // Handle both bare array and wrapped object shapes
       parsed = Array.isArray(outer) ? outer : (outer.suggestions ?? outer.data ?? []);
     } catch {
       console.error("[suggestions] Failed to parse JSON:", raw);
       return NextResponse.json({ error: "Invalid JSON from model" }, { status: 500 });
     }
-
-    const VALID_TYPES: SuggestionType[] = [
-      "QUESTION",
-      "TALKING_POINT",
-      "ANSWER",
-      "FACT_CHECK",
-      "CLARIFICATION",
-    ];
 
     const suggestions: Suggestion[] = parsed
       .slice(0, 3)
@@ -71,8 +78,8 @@ export async function POST(req: NextRequest) {
         type: (VALID_TYPES.includes(s.type as SuggestionType)
           ? s.type
           : "QUESTION") as SuggestionType,
-        preview: s.preview ?? "",
-        detailPrompt: s.detailPrompt ?? s.preview ?? "",
+        preview: (s.preview ?? "").trim(),
+        detailPrompt: (s.detailPrompt ?? s.preview ?? "").trim(),
         timestamp: Date.now(),
       }))
       .filter((s) => s.preview.length > 0);

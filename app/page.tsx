@@ -7,7 +7,7 @@ import ChatPanel from "@/components/ChatPanel";
 import SettingsModal from "@/components/SettingsModal";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useSettings } from "@/hooks/useSettings";
-import { getContextWindow, genId } from "@/lib/defaults";
+import { getContextWindow, getSuggestionsContext, genId } from "@/lib/defaults";
 import type {
   TranscriptChunk,
   SuggestionBatch,
@@ -47,6 +47,11 @@ export default function Home() {
 
   // ── Suggestions ──────────────────────────────────────────────────────────
 
+  const suggestionBatchesRef = useRef<SuggestionBatch[]>([]);
+  useEffect(() => {
+    suggestionBatchesRef.current = suggestionBatches;
+  }, [suggestionBatches]);
+
   const generateSuggestions = useCallback(async (transcriptOverride?: string) => {
     const s = settingsRef.current;
     const transcript =
@@ -57,7 +62,13 @@ export default function Home() {
     setIsSuggestionsLoading(true);
     setError(null);
 
-    const context = getContextWindow(transcript, s.suggestionsContextWords);
+    const context = getSuggestionsContext(transcript, s.suggestionsContextWords);
+
+    // Collect previews from the last 2 batches to prevent repetition
+    const recentBatches = suggestionBatchesRef.current.slice(-2);
+    const previousPreviews = recentBatches.flatMap((b) =>
+      b.suggestions.map((s) => s.preview)
+    );
 
     try {
       const res = await fetch("/api/suggestions", {
@@ -68,6 +79,7 @@ export default function Home() {
           systemPrompt: s.suggestionsSystemPrompt,
           apiKey: s.groqApiKey,
           model: s.suggestionsModel,
+          previousPreviews,
         }),
       });
 
