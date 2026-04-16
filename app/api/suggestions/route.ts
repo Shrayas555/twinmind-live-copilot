@@ -122,35 +122,24 @@ export async function POST(req: NextRequest) {
       .replace("{lastExchange}", lastExchange ?? transcript.split(/\s+/).slice(-60).join(" "))
       .replace("{previousSuggestionsBlock}", previousSuggestionsBlock);
 
-    let rawContent: string;
+    // Use streaming to avoid Groq's json_validate_failed (400) error.
+    // response_format:json_object causes Groq to validate the full output strictly —
+    // openai/gpt-oss-120b intermittently fails this even when output is valid JSON.
+    // With stream:true Groq skips that validation; we accumulate tokens and parse ourselves.
+    const stream = await groq.chat.completions.create({
+      model: model || GROQ_SUGGESTIONS_MODEL,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userMessage },
+      ],
+      temperature: 0.65,
+      max_tokens: 700,
+      stream: true,
+    });
 
-    try {
-      const completion = await groq.chat.completions.create({
-        model: model || GROQ_SUGGESTIONS_MODEL,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: userMessage },
-        ],
-        temperature: 0.65,
-        max_tokens: 700,
-        response_format: { type: "json_object" },
-      });
-      rawContent = completion.choices[0]?.message?.content ?? "";
-    } catch (apiErr: unknown) {
-      // Groq returns 400 json_validate_failed when the model output passes the LLM
-      // but fails Groq's JSON validator. The partial output is in failed_generation —
-      // try to recover usable suggestions from it before giving up.
-      if (
-        apiErr instanceof Groq.APIError &&
-        apiErr.status === 400 &&
-        (apiErr.error as { code?: string })?.code === "json_validate_failed"
-      ) {
-        const failedGen = (apiErr.error as { failed_generation?: string })?.failed_generation ?? "";
-        console.warn("[suggestions] json_validate_failed — recovering from failed_generation");
-        rawContent = failedGen;
-      } else {
-        throw apiErr;
-      }
+    let rawContent = "";
+    for await (const chunk of stream) {
+      rawContent += chunk.choices[0]?.delta?.content ?? "";
     }
 
     const parsed = extractSuggestions(rawContent);
