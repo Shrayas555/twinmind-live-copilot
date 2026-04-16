@@ -112,6 +112,7 @@ export default function Home() {
           timestamp: Date.now(),
           transcriptLength: transcript.length,
         };
+        // Keep every batch for the whole session (no cap / no trim)
         setSuggestionBatches((prev) => [...prev, batch]);
       }
     } catch (e) {

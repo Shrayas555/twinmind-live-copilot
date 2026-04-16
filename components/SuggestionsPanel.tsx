@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 import type { SuggestionBatch, Suggestion, SuggestionType } from "@/lib/types";
 import { formatTimestamp } from "@/lib/defaults";
 
@@ -109,30 +109,42 @@ export default function SuggestionsPanel({
   onSuggestionClick,
   hasTranscript,
 }: Props) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-
-  const toggleBatch = (id: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   // Busy = transcribing audio chunk OR generating suggestions
   const isBusy = isTranscribing || isLoading;
   const busyLabel = isTranscribing ? "Transcribing…" : "Generating…";
 
+  const listRef = useRef<HTMLDivElement>(null);
+  const prevBatchCountRef = useRef(0);
+
+  // Batches are never trimmed in app state. Newest batch is at the top; older batches stack below (scroll down for full history).
+  // When a new batch arrives, gently scroll to top if the user was already reading the latest (near top).
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || batches.length === 0) {
+      prevBatchCountRef.current = batches.length;
+      return;
+    }
+    const grew = batches.length > prevBatchCountRef.current;
+    prevBatchCountRef.current = batches.length;
+    if (!grew) return;
+
+    const nearTop = el.scrollTop < 100;
+    if (nearTop || batches.length === 1) {
+      requestAnimationFrame(() => {
+        el.scrollTo({ top: 0, behavior: batches.length === 1 ? "auto" : "smooth" });
+      });
+    }
+  }, [batches.length]);
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
         <span className="text-xs font-semibold tracking-widest text-zinc-400 uppercase">
           2. Live Suggestions
         </span>
-        <span className="text-xs font-mono text-zinc-500">
-          {batches.length} {batches.length === 1 ? "BATCH" : "BATCHES"}
+        <span className="text-xs font-mono text-zinc-500" title="All batches this session are kept">
+          {batches.length} {batches.length === 1 ? "BATCH" : "BATCHES"} · full history
         </span>
       </div>
 
@@ -170,8 +182,11 @@ export default function SuggestionsPanel({
         )}
       </div>
 
-      {/* Suggestion batches */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 scrollbar-thin scrollbar-thumb-zinc-700">
+      {/* Suggestion batches — chronological, unbounded; scroll for full history */}
+      <div
+        ref={listRef}
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-3 space-y-4 scrollbar-thin scrollbar-thumb-zinc-700"
+      >
         {/* Loading skeleton — first ever load */}
         {isBusy && batches.length === 0 && (
           <div className="space-y-2 mt-4">
@@ -205,57 +220,56 @@ export default function SuggestionsPanel({
           </p>
         )}
 
-        {/* Most recent batch first — older batches progressively faded */}
+        {/* Newest batch at top; older batches stack below at 50% opacity */}
         {[...batches].reverse().map((batch, batchIdx) => {
-          const opacity = batchIdx === 0 ? "opacity-100" : "opacity-40";
+          const isLatest = batchIdx === 0;
 
           return (
-            <div key={batch.id} className={`transition-opacity ${opacity}`}>
-              <button
-                onClick={() => toggleBatch(batch.id)}
-                className="flex items-center gap-2 mb-2 w-full text-left group"
-              >
-                <span className="text-[11px] font-mono text-zinc-600">
+            <div
+              key={batch.id}
+              className={
+                isLatest
+                  ? "rounded-lg border border-emerald-500/25 bg-emerald-500/[0.03] p-3 -mx-1 opacity-100 transition-opacity [content-visibility:auto]"
+                  : "rounded-lg border border-zinc-800/80 bg-zinc-900/40 p-3 -mx-1 opacity-50 hover:opacity-70 transition-opacity [content-visibility:auto]"
+              }
+            >
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className="text-[11px] font-mono text-zinc-500">
                   {formatTimestamp(batch.timestamp)}
                 </span>
-                {batchIdx === 0 && (
+                {isLatest && (
                   <span className="text-[10px] font-bold tracking-widest text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 px-1.5 py-0.5 rounded uppercase">
                     Latest
                   </span>
                 )}
-                <svg
-                  className={`w-3 h-3 text-zinc-600 ml-auto transition-transform ${
-                    collapsed.has(batch.id) ? "-rotate-90" : ""
-                  }`}
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </button>
+                {!isLatest && (
+                  <span className="text-[10px] font-medium tracking-wider text-zinc-600 uppercase">
+                    Earlier
+                  </span>
+                )}
+              </div>
 
-              {!collapsed.has(batch.id) && (
-                <div className="space-y-2">
-                  {batch.suggestions.map((s) => (
-                    <SuggestionCard
-                      key={s.id}
-                      suggestion={s}
-                      onClick={() => onSuggestionClick(s)}
-                    />
-                  ))}
-                </div>
-              )}
+              <div className="space-y-2">
+                {batch.suggestions.map((s) => (
+                  <SuggestionCard
+                    key={s.id}
+                    suggestion={s}
+                    onClick={() => onSuggestionClick(s)}
+                  />
+                ))}
+              </div>
 
               {batchIdx < batches.length - 1 && (
-                <div className="border-b border-zinc-800/60 mt-4" />
+                <div className="border-b border-zinc-800/50 mt-4 -mx-1" aria-hidden />
               )}
             </div>
           );
         })}
+        {batches.length > 1 && (
+          <p className="text-center text-[10px] text-zinc-600 py-3 pb-1">
+            ↓ Scroll for full session history — nothing is removed
+          </p>
+        )}
       </div>
     </div>
   );
