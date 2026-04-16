@@ -53,12 +53,17 @@ export default function Home() {
     suggestionBatchesRef.current = suggestionBatches;
   }, [suggestionBatches]);
 
-  // Ref-based lock so the auto-refresh timer and onChunkTranscribed can't
-  // launch two concurrent suggestion requests, which would produce duplicate batches
+  // Ref-based lock so we never run two Groq suggestion calls at once.
+  // If a new transcript chunk arrives mid-flight, we set pending — otherwise that
+  // refresh is lost forever and the UI stays stuck on one batch.
   const isSuggestionsInFlightRef = useRef(false);
+  const suggestionsPendingRef = useRef(false);
 
   const generateSuggestions = useCallback(async () => {
-    if (isSuggestionsInFlightRef.current) return;
+    if (isSuggestionsInFlightRef.current) {
+      suggestionsPendingRef.current = true;
+      return;
+    }
 
     const s = settingsRef.current;
     const transcript = transcriptRef.current.map((c) => c.text).join(" ");
@@ -120,6 +125,12 @@ export default function Home() {
     } finally {
       isSuggestionsInFlightRef.current = false;
       setIsSuggestionsLoading(false);
+      if (suggestionsPendingRef.current) {
+        suggestionsPendingRef.current = false;
+        queueMicrotask(() => {
+          void generateSuggestions();
+        });
+      }
     }
   }, []);
 
