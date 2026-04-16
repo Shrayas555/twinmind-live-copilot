@@ -12,6 +12,7 @@ interface Props {
   nextRefreshIn: number | null; // seconds
   onRefresh: () => void;
   onSuggestionClick: (suggestion: Suggestion) => void;
+  clickedIds: Set<string>;
   hasTranscript: boolean;
 }
 
@@ -64,9 +65,11 @@ const TYPE_CONFIG: Record<
 function SuggestionCard({
   suggestion,
   onClick,
+  wasClicked,
 }: {
   suggestion: Suggestion;
   onClick: () => void;
+  wasClicked: boolean;
 }) {
   const cfg = TYPE_CONFIG[suggestion.type] ?? TYPE_CONFIG.QUESTION;
 
@@ -75,7 +78,8 @@ function SuggestionCard({
       onClick={onClick}
       className={`
         w-full text-left rounded-lg border p-3 transition-all duration-150
-        bg-zinc-900 hover:bg-zinc-800/80 border-zinc-800 ${cfg.hoverBorder}
+        ${wasClicked ? "bg-zinc-900/50 opacity-60" : "bg-zinc-900 hover:bg-zinc-800/80"}
+        border-zinc-800 ${wasClicked ? "" : cfg.hoverBorder}
         group focus:outline-none focus:ring-1 focus:ring-zinc-600
       `}
     >
@@ -85,13 +89,23 @@ function SuggestionCard({
         >
           {cfg.label}
         </span>
+        {wasClicked && (
+          <span className="ml-auto text-[10px] text-zinc-600 flex items-center gap-1">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            used
+          </span>
+        )}
       </div>
       <p className="text-sm text-zinc-200 leading-snug group-hover:text-white transition-colors">
         {suggestion.preview}
       </p>
-      <p className={`text-[11px] mt-1.5 ${cfg.color} opacity-60 group-hover:opacity-90 transition-opacity`}>
-        {cfg.detail}
-      </p>
+      {!wasClicked && (
+        <p className={`text-[11px] mt-1.5 ${cfg.color} opacity-60 group-hover:opacity-90 transition-opacity`}>
+          {cfg.detail}
+        </p>
+      )}
     </button>
   );
 }
@@ -104,6 +118,7 @@ export default function SuggestionsPanel({
   nextRefreshIn,
   onRefresh,
   onSuggestionClick,
+  clickedIds,
   hasTranscript,
 }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -241,6 +256,7 @@ export default function SuggestionsPanel({
                     key={s.id}
                     suggestion={s}
                     onClick={() => onSuggestionClick(s)}
+                    wasClicked={clickedIds.has(s.id)}
                   />
                 ))}
               </div>

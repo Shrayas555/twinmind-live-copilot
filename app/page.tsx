@@ -25,6 +25,7 @@ export default function Home() {
   const [suggestionBatches, setSuggestionBatches] = useState<SuggestionBatch[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
+  const [clickedSuggestionIds, setClickedSuggestionIds] = useState<Set<string>>(new Set());
   const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(false);
   const [isChatStreaming, setIsChatStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
@@ -53,10 +54,9 @@ export default function Home() {
     suggestionBatchesRef.current = suggestionBatches;
   }, [suggestionBatches]);
 
-  const generateSuggestions = useCallback(async (transcriptOverride?: string) => {
+  const generateSuggestions = useCallback(async () => {
     const s = settingsRef.current;
-    const transcript =
-      transcriptOverride ?? transcriptRef.current.map((c) => c.text).join(" ");
+    const transcript = transcriptRef.current.map((c) => c.text).join(" ");
 
     if (!transcript.trim() || !s.groqApiKey) return;
 
@@ -324,6 +324,12 @@ export default function Home() {
         { role: "user" as const, content: detailedUserContent },
       ];
 
+      setClickedSuggestionIds((prev) => {
+        const next = new Set(prev);
+        next.add(suggestion.id);
+        return next;
+      });
+
       streamChat(history, displayMsg);
     },
     [isChatStreaming, chatMessages, streamChat]
@@ -466,6 +472,7 @@ export default function Home() {
               }
             }}
             onSuggestionClick={handleSuggestionClick}
+            clickedIds={clickedSuggestionIds}
             hasTranscript={transcriptChunks.length > 0}
           />
         </div>
