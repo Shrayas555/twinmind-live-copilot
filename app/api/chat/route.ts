@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       model: model || GROQ_CHAT_MODEL,
       messages: [{ role: "system", content: system }, ...messages],
       temperature: 0.5,
-      max_tokens: 2048,
+      max_tokens: 1024,
       stream: true,
     });
 

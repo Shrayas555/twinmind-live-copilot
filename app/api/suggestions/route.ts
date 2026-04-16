@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
         { role: "user", content: userMessage },
       ],
       temperature: 0.65,
-      max_tokens: 1024,
+      max_tokens: 600,
       response_format: { type: "json_object" },
     });
 

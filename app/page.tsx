@@ -192,7 +192,10 @@ export default function Home() {
   const streamChat = useCallback(
     async (
       apiMessages: { role: "user" | "assistant"; content: string }[],
-      displayUserMsg: ChatMessage
+      displayUserMsg: ChatMessage,
+      // When true, the user message already contains the transcript (suggestion click detail prompt)
+      // so we skip embedding it again in the system prompt — avoids sending ~6k duplicate words
+      transcriptAlreadyInMessage = false
     ) => {
       const s = settingsRef.current;
       setChatMessages((prev) => [...prev, displayUserMsg]);
@@ -200,10 +203,12 @@ export default function Home() {
       setStreamingContent("");
       setError(null);
 
-      const transcriptContext = getContextWindow(
-        transcriptRef.current.map((c) => c.text).join(" "),
-        s.detailedAnswerContextWords
-      );
+      const transcriptContext = transcriptAlreadyInMessage
+        ? ""
+        : getContextWindow(
+            transcriptRef.current.map((c) => c.text).join(" "),
+            s.detailedAnswerContextWords
+          );
 
       try {
         const res = await fetch("/api/chat", {
@@ -330,7 +335,9 @@ export default function Home() {
         return next;
       });
 
-      streamChat(history, displayMsg);
+      // transcriptAlreadyInMessage=true: detailed answer prompt already embeds the full transcript
+      // so skip re-embedding it in the system prompt (avoids ~6000 words of duplicate context)
+      streamChat(history, displayMsg, true);
     },
     [isChatStreaming, chatMessages, streamChat]
   );
