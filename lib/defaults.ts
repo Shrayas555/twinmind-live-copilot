@@ -60,6 +60,33 @@ export function getSuggestionsContext(text: string, recentWords: number): string
   return recent;
 }
 
+/**
+ * Extracts what was literally just said — the last exchange spotlight.
+ *
+ * Whisper transcripts often have no punctuation, so we try sentence
+ * splitting first and fall back to a word-count window if it fails.
+ */
+export function getLastExchange(text: string, sentenceCount = 4): string {
+  const cleaned = text.trim();
+  if (!cleaned) return "";
+
+  // Try sentence splitting (works when Whisper adds punctuation)
+  const sentences = cleaned
+    .split(/(?<=[.?!])\s+|\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 10);
+
+  if (sentences.length >= 2) {
+    // Sentence splitting worked — return last N sentences
+    return sentences.slice(-sentenceCount).join(" ");
+  }
+
+  // Fallback: Whisper gave us a wall of text with no punctuation.
+  // Return last ~80 words — roughly 30-40 seconds of speech.
+  const words = cleaned.split(/\s+/);
+  return words.slice(-80).join(" ");
+}
+
 /** Formats a timestamp as HH:MM:SS */
 export function formatTimestamp(ts: number): string {
   const d = new Date(ts);

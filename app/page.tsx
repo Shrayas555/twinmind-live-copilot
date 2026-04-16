@@ -8,7 +8,7 @@ import SettingsModal from "@/components/SettingsModal";
 import ErrorBanner from "@/components/ErrorBanner";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useSettings } from "@/hooks/useSettings";
-import { getContextWindow, getSuggestionsContext, genId } from "@/lib/defaults";
+import { getContextWindow, getSuggestionsContext, getLastExchange, genId } from "@/lib/defaults";
 import type {
   TranscriptChunk,
   SuggestionBatch,
@@ -64,6 +64,8 @@ export default function Home() {
     setError(null);
 
     const context = getSuggestionsContext(transcript, s.suggestionsContextWords);
+    // Last 4 sentences — explicit spotlight so the model immediately sees what was JUST said
+    const lastExchange = getLastExchange(transcript, 4);
 
     // Collect previews from the last 2 batches to prevent repetition
     const recentBatches = suggestionBatchesRef.current.slice(-2);
@@ -77,6 +79,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           transcript: context,
+          lastExchange,
           systemPrompt: s.suggestionsSystemPrompt,
           apiKey: s.groqApiKey,
           model: s.suggestionsModel,

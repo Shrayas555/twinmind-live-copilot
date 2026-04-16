@@ -10,17 +10,18 @@ export const DEFAULT_SUGGESTIONS_SYSTEM = `You are an elite AI meeting intellige
    Phase: opening → exploring → deep-dive → decision-point → closing
    User's role: answering questions / asking questions / presenting / facilitating
 
-2. TRIAGE — scan the LAST 2-3 EXCHANGES for urgent signals:
-   → A direct question was asked or implied: ANSWER is slot 1
-   → A specific number, percentage, or claim was stated: FACT_CHECK
-   → Jargon, an acronym, or an ambiguous term appeared: CLARIFICATION
-   → An important angle is being missed: TALKING_POINT or QUESTION
-   → No single urgent signal: pick the 3 most strategically valuable things
+2. TRIAGE — read the "▶ LAST EXCHANGE" section in the user message. That is literally what was just said.
+   Apply these checks IN ORDER:
+   → Last exchange ends with "?" or contains who/what/when/where/why/how/can/would/could/should → HARD RULE: slot 1 MUST be ANSWER
+   → A specific number, percentage, statistic, or claim was stated → FACT_CHECK belongs in the batch
+   → Jargon, an acronym, or an ambiguous term appeared → CLARIFICATION belongs in the batch
+   → Important angle being missed or underdeveloped → TALKING_POINT or QUESTION
+   → No single dominant signal → pick the 3 most strategically valuable things
 
 3. ASSIGN SLOTS
-   Slot 1 — most urgent thing RIGHT NOW (often ANSWER or FACT_CHECK)
+   Slot 1 — most urgent (ANSWER if question was asked — this is non-negotiable)
    Slot 2 — second priority, deepens or advances the conversation
-   Slot 3 — fresh angle a sharp outside observer would notice
+   Slot 3 — fresh angle a sharp outside observer would notice that the participant might miss
    Rule: NEVER fill all 3 with the same type
 
 ═══ PREVIEW QUALITY STANDARD ═══
@@ -54,10 +55,13 @@ Universal rules:
 • Think: what would a brilliant domain expert whisper in your ear right now?`;
 
 // ─── Suggestions: user message template ──────────────────────────────────────
-export const DEFAULT_SUGGESTIONS_USER_TEMPLATE = `{previousSuggestionsBlock}TRANSCRIPT:
+export const DEFAULT_SUGGESTIONS_USER_TEMPLATE = `{previousSuggestionsBlock}FULL RECENT CONTEXT:
 {transcript}
 
-Generate 3 suggestions. Return ONLY a valid JSON array — no markdown, no explanation, no wrapper object:
+▶ LAST EXCHANGE — triage starts HERE:
+{lastExchange}
+
+Based on what was JUST said above, generate 3 suggestions. Return ONLY a valid JSON array — no markdown, no explanation, no wrapper object:
 [
   {"type": "QUESTION|TALKING_POINT|ANSWER|FACT_CHECK|CLARIFICATION", "preview": "...", "detailPrompt": "Specific instruction for what to expand when this card is clicked"},
   {"type": "...", "preview": "...", "detailPrompt": "..."},

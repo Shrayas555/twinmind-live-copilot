@@ -27,7 +27,7 @@ Header: Export button + Settings gear icon.
 
 - **Next.js 16** App Router, TypeScript, Tailwind CSS
 - **Groq Whisper Large V3** — audio transcription
-- **Groq `meta-llama/llama-4-maverick-17b-128e-instruct`** — suggestions + chat (GPT-OSS 120B)
+- **Groq `llama-3.3-70b-versatile`** — suggestions + chat
 - **Vercel** — deployment
 - **GitHub** — `Shrayas555/twinmind-live-copilot` (public repo)
 
@@ -64,9 +64,12 @@ lib/defaults.ts                 DEFAULT_SETTINGS, getContextWindow, formatTimest
 ## How suggestions work
 
 - Trigger: every time a new transcript chunk arrives + independent 30s timer while recording
-- Context: last 500 words of transcript (recency matters; full context dilutes signal)
+- Context: two-tier — opening 60 words (meeting type) + recent 600 words (recency signal) via `getSuggestionsContext()`
+- Last Exchange: `getLastExchange()` extracts last 4 sentences (or 80 words if Whisper gave no punctuation) and sends it as a separate spotlight section so the model sees what was JUST said
 - Output: exactly 3 suggestions, each with `type`, `preview` (≤130 chars, standalone value), `detailPrompt`
 - Types: `QUESTION` `TALKING_POINT` `ANSWER` `FACT_CHECK` `CLARIFICATION`
+- Slot 1 is always ANSWER if the last exchange contains a question — hard rule in the system prompt
+- Anti-repetition: last 2 batches' previews passed as `previousPreviews` to prevent repeating angles
 - JSON enforced via `response_format: { type: "json_object" }` on Groq
 - API route handles both `[]` and `{ suggestions: [] }` response shapes
 
@@ -90,18 +93,18 @@ committed to `chatMessages` state.
 |---------|---------|---------|
 | groqApiKey | "" | Stored in localStorage, passed in request bodies |
 | transcriptionModel | `whisper-large-v3` | Groq Whisper model |
-| suggestionsModel | `meta-llama/llama-4-maverick-17b-128e-instruct` | LLM for suggestions |
+| suggestionsModel | `llama-3.3-70b-versatile` | LLM for suggestions |
 | chatModel | same | LLM for chat |
 | suggestionsSystemPrompt | see lib/prompts.ts | Full prompt with `{transcript}` placeholder |
 | detailedAnswerPrompt | see lib/prompts.ts | `{transcript}` `{type}` `{preview}` `{detailPrompt}` |
 | chatSystemPrompt | see lib/prompts.ts | `{transcript}` placeholder |
-| suggestionsContextWords | 500 | Words of transcript sent for suggestions |
+| suggestionsContextWords | 600 | Words of transcript sent for suggestions |
 | detailedAnswerContextWords | 3000 | Words sent for detailed answers / chat |
 | autoRefreshInterval | 30 | Seconds between auto-refresh + audio chunk size |
 
 ## Key design decisions to defend in interview
 
-1. **500-word context for suggestions** — recency bias; last ~2 min of speech is what's actionable now
+1. **600-word context for suggestions** — recency bias; last ~3 min of speech is what's actionable now
 2. **Separate prompts for suggestions vs detailed answers** — different context size, different output format
 3. **Stop/restart chunking** — gives Whisper complete audio files; simpler and more reliable than timeslice
 4. **API key in localStorage → request body** — user pastes their own key; routes call Groq server-side so key never goes browser→Groq directly

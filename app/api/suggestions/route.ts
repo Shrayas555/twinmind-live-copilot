@@ -53,8 +53,9 @@ function splitPrompt(combinedPrompt: string): { system: string; userTemplate: st
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { transcript, systemPrompt, apiKey, model, previousPreviews } = body as {
+    const { transcript, lastExchange, systemPrompt, apiKey, model, previousPreviews } = body as {
       transcript: string;
+      lastExchange?: string; // last 3-4 sentences — explicit triage spotlight
       systemPrompt: string;
       apiKey: string;
       model?: string;
@@ -81,6 +82,7 @@ export async function POST(req: NextRequest) {
 
     const userMessage = (userTemplate || DEFAULT_SUGGESTIONS_USER_TEMPLATE)
       .replace("{transcript}", transcript)
+      .replace("{lastExchange}", lastExchange ?? transcript.split(/\s+/).slice(-60).join(" "))
       .replace("{previousSuggestionsBlock}", previousSuggestionsBlock);
 
     const completion = await groq.chat.completions.create({
