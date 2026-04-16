@@ -5,6 +5,7 @@ import TranscriptPanel from "@/components/TranscriptPanel";
 import SuggestionsPanel from "@/components/SuggestionsPanel";
 import ChatPanel from "@/components/ChatPanel";
 import SettingsModal from "@/components/SettingsModal";
+import ErrorBanner from "@/components/ErrorBanner";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useSettings } from "@/hooks/useSettings";
 import { getContextWindow, getSuggestionsContext, genId } from "@/lib/defaults";
@@ -391,12 +392,7 @@ export default function Home() {
       </header>
 
       {/* Error banner */}
-      {error && (
-        <div className="flex items-center justify-between px-4 py-2 bg-red-950/60 border-b border-red-800/50 text-xs text-red-300 shrink-0">
-          <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-200 ml-4">✕</button>
-        </div>
-      )}
+      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
       {/* 3-column layout */}
       <div className="flex-1 flex overflow-hidden min-h-0">

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import Groq from "groq-sdk";
 import { GROQ_CHAT_MODEL } from "@/lib/defaults";
+import { parseGroqError } from "@/lib/groqError";
 
 export async function POST(req: NextRequest) {
   try {
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
         } catch (e) {
-          const msg = e instanceof Error ? e.message : "Stream error";
+          const msg = parseGroqError(e);
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`));
           controller.close();
         }
@@ -57,8 +58,9 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Chat failed";
+    const message = parseGroqError(err);
     console.error("[chat]", message);
-    return new Response(JSON.stringify({ error: message }), { status: 500 });
+    const status = String(err instanceof Error ? err.message : "").includes("rate_limit") ? 429 : 500;
+    return new Response(JSON.stringify({ error: message }), { status });
   }
 }
