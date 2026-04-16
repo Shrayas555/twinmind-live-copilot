@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 
 interface UseAudioRecorderOptions {
   apiKey: string;
@@ -28,35 +28,45 @@ export function useAudioRecorder({
   const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRecordingRef = useRef(false); // ref for closures inside onstop
 
-  const transcribeBlob = useCallback(
-    async (blob: Blob) => {
-      if (blob.size < 1000) return; // skip silence
+  // MediaRecorder's onstop closes over the first transcribeBlob — keep latest values in refs
+  // so every chunk uses the current API key, model, and transcript/suggestion callbacks.
+  const apiKeyRef = useRef(apiKey);
+  const modelRef = useRef(model);
+  const onChunkTranscribedRef = useRef(onChunkTranscribed);
+  const onErrorRef = useRef(onError);
+  useEffect(() => {
+    apiKeyRef.current = apiKey;
+    modelRef.current = model;
+    onChunkTranscribedRef.current = onChunkTranscribed;
+    onErrorRef.current = onError;
+  }, [apiKey, model, onChunkTranscribed, onError]);
 
-      setIsTranscribing(true);
-      try {
-        const fd = new FormData();
-        fd.append("audio", blob, "chunk.webm");
-        fd.append("apiKey", apiKey);
-        fd.append("model", model);
+  const transcribeBlob = useCallback(async (blob: Blob) => {
+    if (blob.size < 1000) return; // skip silence
 
-        const res = await fetch("/api/transcribe", { method: "POST", body: fd });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: "Transcription request failed" }));
-          onError(err.error ?? "Transcription failed");
-          return;
-        }
-        const data = await res.json();
-        if (data.text?.trim()) {
-          onChunkTranscribed(data.text.trim());
-        }
-      } catch (e) {
-        onError(e instanceof Error ? e.message : "Transcription error");
-      } finally {
-        setIsTranscribing(false);
+    setIsTranscribing(true);
+    try {
+      const fd = new FormData();
+      fd.append("audio", blob, "chunk.webm");
+      fd.append("apiKey", apiKeyRef.current);
+      fd.append("model", modelRef.current);
+
+      const res = await fetch("/api/transcribe", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Transcription request failed" }));
+        onErrorRef.current(err.error ?? "Transcription failed");
+        return;
       }
-    },
-    [apiKey, model, onChunkTranscribed, onError]
-  );
+      const data = await res.json();
+      if (data.text?.trim()) {
+        onChunkTranscribedRef.current(data.text.trim());
+      }
+    } catch (e) {
+      onErrorRef.current(e instanceof Error ? e.message : "Transcription error");
+    } finally {
+      setIsTranscribing(false);
+    }
+  }, []);
 
   const startChunk = useCallback(
     (stream: MediaStream, overrideDuration?: number) => {

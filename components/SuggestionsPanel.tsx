@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import type { SuggestionBatch, Suggestion, SuggestionType } from "@/lib/types";
 import { formatTimestamp } from "@/lib/defaults";
 
@@ -113,29 +112,6 @@ export default function SuggestionsPanel({
   const isBusy = isTranscribing || isLoading;
   const busyLabel = isTranscribing ? "Transcribing…" : "Generating…";
 
-  const listRef = useRef<HTMLDivElement>(null);
-  const prevBatchCountRef = useRef(0);
-
-  // Batches are never trimmed in app state. Newest batch is at the top; older batches stack below (scroll down for full history).
-  // When a new batch arrives, gently scroll to top if the user was already reading the latest (near top).
-  useEffect(() => {
-    const el = listRef.current;
-    if (!el || batches.length === 0) {
-      prevBatchCountRef.current = batches.length;
-      return;
-    }
-    const grew = batches.length > prevBatchCountRef.current;
-    prevBatchCountRef.current = batches.length;
-    if (!grew) return;
-
-    const nearTop = el.scrollTop < 100;
-    if (nearTop || batches.length === 1) {
-      requestAnimationFrame(() => {
-        el.scrollTo({ top: 0, behavior: batches.length === 1 ? "auto" : "smooth" });
-      });
-    }
-  }, [batches.length]);
-
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
@@ -175,40 +151,26 @@ export default function SuggestionsPanel({
           {isBusy ? busyLabel : "Reload suggestions"}
         </button>
 
-        {nextChunkIn !== null && (
-          <span className="text-[11px] text-zinc-600 font-mono" title="Time until this audio chunk is sent for transcription">
-            next chunk ~{nextChunkIn}s
-          </span>
-        )}
+        <div className="flex flex-col items-end gap-0.5 min-w-0">
+          {isLoading && batches.length > 0 && (
+            <span className="text-[10px] text-zinc-500 tabular-nums">updating suggestions…</span>
+          )}
+          {nextChunkIn !== null && (
+            <span className="text-[11px] text-zinc-600 font-mono" title="Time until this audio chunk is sent for transcription">
+              next chunk ~{nextChunkIn}s
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Suggestion batches — chronological, unbounded; scroll for full history */}
-      <div
-        ref={listRef}
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-3 space-y-4 scrollbar-thin scrollbar-thumb-zinc-700"
-      >
+      {/* Suggestion batches — unbounded; scroll for full history (no layout jump from loading rows) */}
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-3 space-y-4 scrollbar-thin scrollbar-thumb-zinc-700">
         {/* Loading skeleton — first ever load */}
         {isBusy && batches.length === 0 && (
           <div className="space-y-2 mt-4">
             {[1, 2, 3].map((i) => (
               <div key={i} className="h-20 rounded-lg bg-zinc-800/50 animate-pulse" />
             ))}
-          </div>
-        )}
-
-        {/* "Generating new batch" row at top when refreshing with existing batches */}
-        {isBusy && batches.length > 0 && (
-          <div className="flex items-center gap-2 px-1 py-2">
-            <div className="flex gap-1">
-              {[0, 1, 2].map((i) => (
-                <span
-                  key={i}
-                  className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce"
-                  style={{ animationDelay: `${i * 120}ms` }}
-                />
-              ))}
-            </div>
-            <span className="text-xs text-zinc-500">{busyLabel.toLowerCase()} new batch…</span>
           </div>
         )}
 
@@ -229,8 +191,8 @@ export default function SuggestionsPanel({
               key={batch.id}
               className={
                 isLatest
-                  ? "rounded-lg border border-emerald-500/25 bg-emerald-500/[0.03] p-3 -mx-1 opacity-100 transition-opacity [content-visibility:auto]"
-                  : "rounded-lg border border-zinc-800/80 bg-zinc-900/40 p-3 -mx-1 opacity-50 hover:opacity-70 transition-opacity [content-visibility:auto]"
+                  ? "rounded-lg border border-emerald-500/25 bg-emerald-500/[0.03] p-3 -mx-1 opacity-100 transition-opacity"
+                  : "rounded-lg border border-zinc-800/80 bg-zinc-900/40 p-3 -mx-1 opacity-50 hover:opacity-70 transition-opacity"
               }
             >
               <div className="flex items-center gap-2 mb-2.5">
@@ -252,7 +214,7 @@ export default function SuggestionsPanel({
               <div className="space-y-2">
                 {batch.suggestions.map((s) => (
                   <SuggestionCard
-                    key={s.id}
+                    key={`${batch.id}-${s.id}`}
                     suggestion={s}
                     onClick={() => onSuggestionClick(s)}
                   />

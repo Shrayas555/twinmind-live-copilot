@@ -94,7 +94,10 @@ export function formatTimestamp(ts: number): string {
   return d.toLocaleTimeString("en-US", { hour12: false });
 }
 
-/** Generates a stable short ID */
+/** Unique IDs for React keys and batch identity (avoid short-id collisions across many batches). */
 export function genId(): string {
-  return Math.random().toString(36).slice(2, 9);
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }

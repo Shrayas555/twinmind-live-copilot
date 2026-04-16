@@ -74,6 +74,8 @@ export default function Home() {
     setIsSuggestionsLoading(true);
     setError(null);
 
+    const transcriptLenAtRequest = transcript.length;
+
     const context = getSuggestionsContext(transcript, s.suggestionsContextWords);
     // Last 4 sentences — explicit spotlight so the model immediately sees what was JUST said
     const lastExchange = getLastExchange(transcript, 4);
@@ -105,6 +107,13 @@ export default function Home() {
       }
 
       const data = await res.json();
+
+      // New transcript may have landed while Groq was streaming — run again so the next batch matches latest speech.
+      const transcriptAfter = transcriptRef.current.map((c) => c.text).join(" ");
+      if (transcriptAfter.length > transcriptLenAtRequest) {
+        suggestionsPendingRef.current = true;
+      }
+
       if (data.parseError) {
         // Model output couldn't be parsed as JSON — log silently, will retry next chunk
         console.warn("[suggestions] Parse error — JSON extraction failed. Will retry on next chunk.");
@@ -117,8 +126,12 @@ export default function Home() {
           timestamp: Date.now(),
           transcriptLength: transcript.length,
         };
-        // Keep every batch for the whole session (no cap / no trim)
-        setSuggestionBatches((prev) => [...prev, batch]);
+        // Keep every batch for the whole session (no cap / no trim); sync ref immediately for chained/pending calls
+        setSuggestionBatches((prev) => {
+          const next = [...prev, batch];
+          suggestionBatchesRef.current = next;
+          return next;
+        });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error — check your connection.");
