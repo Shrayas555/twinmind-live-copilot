@@ -1,8 +1,12 @@
 import {
   DEFAULT_SUGGESTIONS_PROMPT,
+  DEFAULT_SUGGESTIONS_SYSTEM,
+  DEFAULT_SUGGESTIONS_USER_TEMPLATE,
   DEFAULT_DETAILED_ANSWER_PROMPT,
   DEFAULT_CHAT_PROMPT,
 } from "./prompts";
+
+export { DEFAULT_SUGGESTIONS_SYSTEM, DEFAULT_SUGGESTIONS_USER_TEMPLATE };
 import type { AppSettings } from "./types";
 
 // Best available open model on Groq. Check console.groq.com/docs/models for your tier.

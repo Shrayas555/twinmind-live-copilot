@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
-import { GROQ_SUGGESTIONS_MODEL } from "@/lib/defaults";
+import {
+  GROQ_SUGGESTIONS_MODEL,
+  DEFAULT_SUGGESTIONS_SYSTEM,
+  DEFAULT_SUGGESTIONS_USER_TEMPLATE,
+} from "@/lib/defaults";
 import type { Suggestion, SuggestionType } from "@/lib/types";
 import { genId } from "@/lib/defaults";
 
@@ -18,10 +22,31 @@ const VALID_TYPES: SuggestionType[] = [
   "CLARIFICATION",
 ];
 
+// Minimum words before we bother generating suggestions — avoids garbage on thin context
+const MIN_TRANSCRIPT_WORDS = 40;
+
 function buildPreviousSuggestionsBlock(previousPreviews: string[]): string {
   if (!previousPreviews.length) return "";
   const items = previousPreviews.map((p) => `• ${p}`).join("\n");
-  return `ALREADY SURFACED — do NOT repeat these angles (find fresh ones):\n${items}\n`;
+  return `ALREADY SURFACED — do NOT repeat these angles, find fresh ones:\n${items}\n\n`;
+}
+
+/**
+ * The settings-editable "systemPrompt" field is a combined string
+ * (system + "---USER TEMPLATE---" + user template). Split it here.
+ * Falls back to defaults if the separator isn't present (e.g. custom prompts).
+ */
+function splitPrompt(combinedPrompt: string): { system: string; userTemplate: string } {
+  const SEP = "---USER TEMPLATE---";
+  const idx = combinedPrompt.indexOf(SEP);
+  if (idx === -1) {
+    // Custom prompt — treat the whole thing as the user message, use default system
+    return { system: DEFAULT_SUGGESTIONS_SYSTEM, userTemplate: combinedPrompt };
+  }
+  return {
+    system: combinedPrompt.slice(0, idx).trim(),
+    userTemplate: combinedPrompt.slice(idx + SEP.length).trim(),
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -32,7 +57,6 @@ export async function POST(req: NextRequest) {
       systemPrompt: string;
       apiKey: string;
       model?: string;
-      // Previews from the last 2 batches so the model avoids repeating the same angles
       previousPreviews?: string[];
     };
 
@@ -43,17 +67,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No API key provided" }, { status: 400 });
     }
 
+    // Don't waste an API call on a thin transcript — suggestions would be generic
+    const wordCount = transcript.trim().split(/\s+/).length;
+    if (wordCount < MIN_TRANSCRIPT_WORDS) {
+      return NextResponse.json({ suggestions: [] });
+    }
+
     const groq = new Groq({ apiKey });
 
     const previousSuggestionsBlock = buildPreviousSuggestionsBlock(previousPreviews ?? []);
+    const { system, userTemplate } = splitPrompt(systemPrompt ?? DEFAULT_SUGGESTIONS_SYSTEM);
 
-    const prompt = systemPrompt
+    const userMessage = (userTemplate || DEFAULT_SUGGESTIONS_USER_TEMPLATE)
       .replace("{transcript}", transcript)
       .replace("{previousSuggestionsBlock}", previousSuggestionsBlock);
 
     const completion = await groq.chat.completions.create({
       model: model || GROQ_SUGGESTIONS_MODEL,
-      messages: [{ role: "user", content: prompt }],
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userMessage },
+      ],
       temperature: 0.65,
       max_tokens: 1024,
       response_format: { type: "json_object" },
@@ -64,7 +98,6 @@ export async function POST(req: NextRequest) {
     let parsed: SuggestionRaw[];
     try {
       const outer = JSON.parse(raw);
-      // Handle both bare array and wrapped object shapes
       parsed = Array.isArray(outer) ? outer : (outer.suggestions ?? outer.data ?? []);
     } catch {
       console.error("[suggestions] Failed to parse JSON:", raw);
