@@ -104,9 +104,7 @@ export function useAudioRecorder({
       streamRef.current = stream;
       isRecordingRef.current = true;
       setIsRecording(true);
-      // First chunk is 10 s so initial suggestions appear quickly (~12-13 s total);
-      // subsequent chunks run at the full chunkDuration via onstop → startChunk(stream)
-      startChunk(stream, Math.min(chunkDuration, 10));
+      startChunk(stream);
     } catch (e) {
       if (e instanceof DOMException) {
         if (e.name === "NotAllowedError") {

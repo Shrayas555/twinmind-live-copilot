@@ -23,8 +23,9 @@ const VALID_TYPES: SuggestionType[] = [
   "CLARIFICATION",
 ];
 
-// Minimum words before we bother generating suggestions — avoids garbage on thin context
-const MIN_TRANSCRIPT_WORDS = 40;
+// Minimum words before generating suggestions — 30s of typical speech ≈ 35-40 words;
+// set to 20 so slow speakers still get suggestions after the first chunk
+const MIN_TRANSCRIPT_WORDS = 20;
 
 function buildPreviousSuggestionsBlock(previousPreviews: string[]): string {
   if (!previousPreviews.length) return "";
@@ -132,23 +133,23 @@ export async function POST(req: NextRequest) {
         ],
         temperature: 0.65,
         max_tokens: 700,
-        // No response_format — openai/gpt-oss-120b can fail json_validate_failed
-        // with response_format:json_object. We extract JSON robustly from raw output instead.
+        response_format: { type: "json_object" },
       });
       rawContent = completion.choices[0]?.message?.content ?? "";
     } catch (apiErr: unknown) {
-      // Groq returns 400 json_validate_failed when the model output isn't valid JSON
-      // but still includes the partial output in failed_generation — try to use it.
+      // Groq returns 400 json_validate_failed when the model output passes the LLM
+      // but fails Groq's JSON validator. The partial output is in failed_generation —
+      // try to recover usable suggestions from it before giving up.
       if (
         apiErr instanceof Groq.APIError &&
         apiErr.status === 400 &&
         (apiErr.error as { code?: string })?.code === "json_validate_failed"
       ) {
         const failedGen = (apiErr.error as { failed_generation?: string })?.failed_generation ?? "";
-        console.warn("[suggestions] json_validate_failed — attempting recovery from failed_generation");
+        console.warn("[suggestions] json_validate_failed — recovering from failed_generation");
         rawContent = failedGen;
       } else {
-        throw apiErr; // re-throw for the outer catch to handle
+        throw apiErr;
       }
     }
 
