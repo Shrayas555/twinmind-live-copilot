@@ -468,11 +468,13 @@ export default function Home() {
             isRecording={isRecording}
             nextRefreshIn={nextRefreshIn}
             onRefresh={() => {
-              // If recording, flush the current audio chunk first (transcribes it),
-              // which will automatically trigger generateSuggestions via onChunkTranscribed.
+              // If recording, flush the current audio chunk (transcribes it, then triggers
+              // generateSuggestions via onChunkTranscribed) and reset the auto-refresh countdown
+              // so the next auto-refresh is a full interval from now.
               // If not recording, generate directly from existing transcript.
               if (isRecording) {
                 flushChunk();
+                startRefreshTimer();
               } else {
                 generateSuggestions();
               }
