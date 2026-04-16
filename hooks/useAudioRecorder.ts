@@ -108,7 +108,19 @@ export function useAudioRecorder({
       // subsequent chunks restart at full chunkDuration via onstop → startChunk(stream)
       startChunk(stream, Math.min(chunkDuration, 20));
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Mic access denied");
+      if (e instanceof DOMException) {
+        if (e.name === "NotAllowedError") {
+          onError("Microphone access denied — allow mic access in your browser settings and try again.");
+        } else if (e.name === "NotFoundError") {
+          onError("No microphone found — connect a mic and try again.");
+        } else if (e.name === "NotReadableError") {
+          onError("Microphone is in use by another app — close it and try again.");
+        } else {
+          onError(e.message || "Microphone error");
+        }
+      } else {
+        onError(e instanceof Error ? e.message : "Mic access denied");
+      }
     }
   }, [startChunk, onError]);
 

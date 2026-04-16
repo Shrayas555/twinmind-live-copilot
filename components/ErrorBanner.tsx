@@ -126,16 +126,10 @@ export default function ErrorBanner({ message, onDismiss }: Props) {
 
   useEffect(() => {
     if (countdown === null || countdown <= 0) return;
-    const id = setInterval(() => {
-      setCountdown((c) => {
-        if (c === null || c <= 1) {
-          clearInterval(id);
-          return 0;
-        }
-        return c - 1;
-      });
+    const id = setTimeout(() => {
+      setCountdown((c) => (c !== null && c > 0 ? c - 1 : c));
     }, 1000);
-    return () => clearInterval(id);
+    return () => clearTimeout(id);
   }, [countdown]);
 
   return (

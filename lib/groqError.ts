@@ -5,9 +5,14 @@
 export function parseGroqError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
 
+  // Context length exceeded
+  if (raw.includes("context_length_exceeded") || raw.includes("maximum context length")) {
+    return "Transcript too long for the model context window. Reduce the context window size in Settings → Context & Timing.";
+  }
+
   // Rate limit — extract the retry time if present
   if (raw.includes("rate_limit_exceeded") || raw.includes("Rate limit")) {
-    const retryMatch = raw.match(/try again in ([^\\.]+)/i);
+    const retryMatch = raw.match(/try again in ([^.]+)/i);
     const retryIn = retryMatch ? ` Try again in ${retryMatch[1].trim()}.` : "";
     const tpdMatch = raw.match(/Limit (\d+), Used (\d+)/);
     if (tpdMatch) {

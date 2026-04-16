@@ -54,12 +54,19 @@ export default function Home() {
     suggestionBatchesRef.current = suggestionBatches;
   }, [suggestionBatches]);
 
+  // Ref-based lock so the auto-refresh timer and onChunkTranscribed can't
+  // launch two concurrent suggestion requests, which would produce duplicate batches
+  const isSuggestionsInFlightRef = useRef(false);
+
   const generateSuggestions = useCallback(async () => {
+    if (isSuggestionsInFlightRef.current) return;
+
     const s = settingsRef.current;
     const transcript = transcriptRef.current.map((c) => c.text).join(" ");
 
     if (!transcript.trim() || !s.groqApiKey) return;
 
+    isSuggestionsInFlightRef.current = true;
     setIsSuggestionsLoading(true);
     setError(null);
 
@@ -106,6 +113,7 @@ export default function Home() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error — check your connection.");
     } finally {
+      isSuggestionsInFlightRef.current = false;
       setIsSuggestionsLoading(false);
     }
   }, []);
