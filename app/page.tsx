@@ -318,7 +318,6 @@ export default function Home() {
         content: suggestion.preview,            // shown in UI
         apiContent: detailedUserContent,        // used in API history — full expanded prompt
         timestamp: Date.now(),
-        fromSuggestion: suggestion.preview,
         fromSuggestionType: suggestion.type,    // for the type badge in chat
       };
 

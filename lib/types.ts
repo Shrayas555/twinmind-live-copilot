@@ -32,7 +32,6 @@ export interface ChatMessage {
   content: string;              // displayed in the UI (short preview for suggestion clicks)
   apiContent?: string;          // full content sent to the API (expanded detailPrompt for suggestion clicks)
   timestamp: number;
-  fromSuggestion?: string;      // suggestion preview if originated from a card click
   fromSuggestionType?: SuggestionType; // type badge to show on suggestion-click messages
 }
 
