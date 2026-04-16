@@ -5,9 +5,9 @@ import {
 } from "./prompts";
 import type { AppSettings } from "./types";
 
-// GPT-OSS 120B on Groq — update this if Groq changes the model ID
-export const GROQ_SUGGESTIONS_MODEL = "meta-llama/llama-4-maverick-17b-128e-instruct";
-export const GROQ_CHAT_MODEL = "meta-llama/llama-4-maverick-17b-128e-instruct";
+// Best available open model on Groq. Check console.groq.com/docs/models for your tier.
+export const GROQ_SUGGESTIONS_MODEL = "llama-3.3-70b-versatile";
+export const GROQ_CHAT_MODEL = "llama-3.3-70b-versatile";
 export const GROQ_TRANSCRIPTION_MODEL = "whisper-large-v3";
 
 export const DEFAULT_SETTINGS: AppSettings = {

@@ -110,15 +110,33 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
 
           {tab === "models" && (
             <>
+              <div className="flex justify-end">
+                <button
+                  onClick={() =>
+                    setLocal((prev) => ({
+                      ...prev,
+                      transcriptionModel: DEFAULT_SETTINGS.transcriptionModel,
+                      suggestionsModel: DEFAULT_SETTINGS.suggestionsModel,
+                      chatModel: DEFAULT_SETTINGS.chatModel,
+                    }))
+                  }
+                  className="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition-colors"
+                >
+                  Reset models to defaults
+                </button>
+              </div>
               <Field label="Transcription Model" hint="Groq Whisper model for audio-to-text.">
                 <TextInput value={local.transcriptionModel} onChange={(v) => set("transcriptionModel", v)} mono />
               </Field>
-              <Field label="Suggestions Model" hint="Model used to generate live suggestions. GPT-OSS 120B equivalent.">
+              <Field label="Suggestions Model" hint="Model used to generate live suggestions. Check console.groq.com/docs/models for IDs available on your account.">
                 <TextInput value={local.suggestionsModel} onChange={(v) => set("suggestionsModel", v)} mono />
               </Field>
               <Field label="Chat Model" hint="Model used for detailed answers and chat.">
                 <TextInput value={local.chatModel} onChange={(v) => set("chatModel", v)} mono />
               </Field>
+              <div className="text-xs text-zinc-500 bg-zinc-800/50 rounded-lg p-3">
+                <p>Recommended: <span className="text-zinc-300 font-mono">llama-3.3-70b-versatile</span></p>
+              </div>
             </>
           )}
 
