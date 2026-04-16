@@ -67,8 +67,8 @@ export default function Home() {
     // Last 4 sentences — explicit spotlight so the model immediately sees what was JUST said
     const lastExchange = getLastExchange(transcript, 4);
 
-    // Collect previews from the last 2 batches to prevent repetition
-    const recentBatches = suggestionBatchesRef.current.slice(-2);
+    // Collect previews from the last 3 batches to prevent repetition
+    const recentBatches = suggestionBatchesRef.current.slice(-3);
     const previousPreviews = recentBatches.flatMap((b) =>
       b.suggestions.map((s) => s.preview)
     );
@@ -144,11 +144,11 @@ export default function Home() {
       const chunk: TranscriptChunk = { id: genId(), text, timestamp: Date.now() };
       setTranscriptChunks((prev) => {
         const updated = [...prev, chunk];
-        transcriptRef.current = updated;
+        transcriptRef.current = updated; // ref updated synchronously before generateSuggestions reads it
         return updated;
       });
-      const newFull = transcriptRef.current.map((c) => c.text).join(" ") + " " + text;
-      generateSuggestions(newFull.trim());
+      // transcriptRef.current is already updated above — generateSuggestions reads it directly
+      generateSuggestions();
     },
     [generateSuggestions]
   );
@@ -414,6 +414,7 @@ export default function Home() {
           <SuggestionsPanel
             batches={suggestionBatches}
             isLoading={isSuggestionsLoading}
+            isTranscribing={isTranscribing}
             nextRefreshIn={nextRefreshIn}
             onRefresh={() => {
               // If recording, flush the current audio chunk first (transcribes it),

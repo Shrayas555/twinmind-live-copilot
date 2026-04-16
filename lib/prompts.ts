@@ -52,7 +52,12 @@ Universal rules:
 • Under 130 characters — no padding
 • Reference exact words, numbers, or names from the transcript
 • Don't suggest anything a competent person would obviously already do
-• Think: what would a brilliant domain expert whisper in your ear right now?`;
+• Think: what would a brilliant domain expert whisper in your ear right now?
+
+detailPrompt — one targeted sentence for what to drill into when clicked. Specific beats generic:
+  ✗ "Explain this topic in more detail"
+  ✓ "Expand on why their 3-month onboarding concern is valid; give 3 concrete ways to get below 11 days"
+  Reference exact names, numbers, or quotes from the transcript. The detailPrompt alone should tell an expert exactly what angle to take.`;
 
 // ─── Suggestions: user message template ──────────────────────────────────────
 export const DEFAULT_SUGGESTIONS_USER_TEMPLATE = `{previousSuggestionsBlock}FULL RECENT CONTEXT:
@@ -61,12 +66,12 @@ export const DEFAULT_SUGGESTIONS_USER_TEMPLATE = `{previousSuggestionsBlock}FULL
 ▶ LAST EXCHANGE — triage starts HERE:
 {lastExchange}
 
-Based on what was JUST said above, generate 3 suggestions. Return ONLY a valid JSON array — no markdown, no explanation, no wrapper object:
-[
-  {"type": "QUESTION|TALKING_POINT|ANSWER|FACT_CHECK|CLARIFICATION", "preview": "...", "detailPrompt": "Specific instruction for what to expand when this card is clicked"},
+Based on what was JUST said above, generate 3 suggestions. Return a JSON object with a "suggestions" key — no markdown, no explanation outside the JSON:
+{"suggestions": [
+  {"type": "QUESTION|TALKING_POINT|ANSWER|FACT_CHECK|CLARIFICATION", "preview": "≤130 chars, standalone value", "detailPrompt": "One targeted sentence referencing exact names/numbers/quotes from the transcript"},
   {"type": "...", "preview": "...", "detailPrompt": "..."},
   {"type": "...", "preview": "...", "detailPrompt": "..."}
-]`;
+]}`;
 
 // Combined export for Settings display / backward compatibility
 export const DEFAULT_SUGGESTIONS_PROMPT =
