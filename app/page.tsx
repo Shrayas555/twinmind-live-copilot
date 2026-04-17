@@ -75,6 +75,9 @@ export default function Home() {
   const suggestionsCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const consecutiveSuggestionFailuresRef = useRef(0);
   const MIN_SUGGESTION_COOLDOWN_MS = 5000;
+  // AbortController for the active suggestions fetch — lets streamChat cancel it
+  // immediately when a chat starts, freeing full Groq bandwidth for the chat call.
+  const suggestionsAbortRef = useRef<AbortController | null>(null);
 
   // Ref-based chat lock — React state is async so two rapid clicks can both pass
   // an `if (isChatStreaming) return` guard before the state re-render. A ref is
@@ -141,10 +144,14 @@ export default function Home() {
     // Extra delay to add after this call finishes — non-zero after failures so Groq recovers.
     let failureBackoffMs = 0;
 
+    const abortCtrl = new AbortController();
+    suggestionsAbortRef.current = abortCtrl;
+
     try {
       const res = await fetch("/api/suggestions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abortCtrl.signal,
         body: JSON.stringify({
           transcript: context,
           lastExchange,
@@ -200,12 +207,18 @@ export default function Home() {
         });
       }
     } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        // Cancelled by a chat request — not an error. Pending was already set by
+        // streamChat so suggestions will retry automatically after chat completes.
+        return;
+      }
       const msg = e instanceof Error ? e.message : "Network error — check your connection.";
       addLog({ type: "suggestions", status: "error", durationMs: Date.now() - t0, detail: msg });
       setError(msg);
       consecutiveSuggestionFailuresRef.current++;
       failureBackoffMs = Math.min(15000 * consecutiveSuggestionFailuresRef.current, 60000);
     } finally {
+      suggestionsAbortRef.current = null;
       isSuggestionsInFlightRef.current = false;
       // Push lastSuggestionEndTimeRef forward by backoff so the cooldown check naturally
       // enforces the longer wait. On success failureBackoffMs is 0 — normal 5s applies.
@@ -315,6 +328,13 @@ export default function Home() {
       // that both pass an async-state check before the first re-render.
       if (isChatStreamingRef.current) return;
       isChatStreamingRef.current = true;
+
+      // If a suggestions call is already in-flight, abort it immediately so chat
+      // gets full Groq bandwidth. Mark pending so it retries after chat finishes.
+      if (isSuggestionsInFlightRef.current) {
+        suggestionsPendingRef.current = true;
+        suggestionsAbortRef.current?.abort();
+      }
 
       const s = settingsRef.current;
       setChatMessages((prev) => [...prev, displayUserMsg]);
