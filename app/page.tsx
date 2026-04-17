@@ -82,16 +82,17 @@ export default function Home() {
   const generateSuggestions = useCallback(async (force = false) => { // eslint-disable-line react-hooks/exhaustive-deps
     const isForced = force || forceNextSuggestionRef.current;
     forceNextSuggestionRef.current = false;
+    console.log("[sugg] called isForced=%s inFlight=%s", isForced, isSuggestionsInFlightRef.current);
     if (isSuggestionsInFlightRef.current) {
       suggestionsPendingRef.current = true;
+      console.log("[sugg] blocked: in-flight");
       return;
     }
 
-    // Enforce minimum gap between Groq calls to avoid congestion timeouts.
-    // If within cooldown, queue a deferred retry (only one timer at a time).
     const cooldownRemaining = MIN_SUGGESTION_COOLDOWN_MS - (Date.now() - lastSuggestionEndTimeRef.current);
     if (cooldownRemaining > 0) {
       suggestionsPendingRef.current = true;
+      console.log("[sugg] blocked: cooldown %dms remaining", Math.round(cooldownRemaining));
       if (!suggestionsCooldownTimerRef.current) {
         suggestionsCooldownTimerRef.current = setTimeout(() => {
           suggestionsCooldownTimerRef.current = null;
@@ -104,24 +105,22 @@ export default function Home() {
       return;
     }
 
-    // Defer while a chat call is streaming — running both simultaneously congests
-    // the shared Groq key and causes timeouts on both. Chat takes priority.
     if (isChatStreamingRef.current) {
       suggestionsPendingRef.current = true;
+      console.log("[sugg] blocked: chat streaming");
       return;
     }
 
     const s = settingsRef.current;
     const transcript = transcriptRef.current.map((c) => c.text).join(" ");
 
-    if (!transcript.trim() || !s.groqApiKey) return;
+    if (!transcript.trim() || !s.groqApiKey) { console.log("[sugg] blocked: no transcript or key"); return; }
 
-    // Skip if transcript hasn't grown enough since the last batch — prevents redundant
-    // calls when chunks arrive faster than speech (silence chunks, rapid reloads, etc.).
-    // ~150 chars ≈ 30 words. Bypassed when the user explicitly hits reload (force=true).
     if (!isForced) {
       const lastBatch = suggestionBatchesRef.current[suggestionBatchesRef.current.length - 1];
-      if (lastBatch && transcript.length - lastBatch.transcriptLength < 150) return;
+      const newChars = lastBatch ? transcript.length - lastBatch.transcriptLength : 999;
+      console.log("[sugg] new-speech check: %d new chars (need 150)", newChars);
+      if (lastBatch && newChars < 150) { console.log("[sugg] blocked: not enough new speech"); return; }
     }
 
     isSuggestionsInFlightRef.current = true;
@@ -253,6 +252,7 @@ export default function Home() {
       // transcriptRef synchronously. generateSuggestions reads transcriptRef directly.
       transcriptRef.current = [...transcriptRef.current, chunk];
       setTranscriptChunks(transcriptRef.current);
+      console.log("[transcribe] chunk landed, forceFlag=%s", forceNextSuggestionRef.current);
       generateSuggestions();
     },
     [generateSuggestions]
@@ -632,6 +632,7 @@ export default function Home() {
             onRefresh={() => {
               setIsSuggestionsQueued(true);
               if (isRecording) {
+                console.log("[reload] pressed while recording — setting force flag + flushChunk");
                 forceNextSuggestionRef.current = true;
                 flushChunk();
               } else {
