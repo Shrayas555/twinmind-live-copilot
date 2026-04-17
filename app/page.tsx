@@ -92,6 +92,7 @@ export default function Home() {
     const cooldownRemaining = MIN_SUGGESTION_COOLDOWN_MS - (Date.now() - lastSuggestionEndTimeRef.current);
     if (cooldownRemaining > 0) {
       suggestionsPendingRef.current = true;
+      if (isForced) forceNextSuggestionRef.current = true;
       console.log("[sugg] blocked: cooldown %dms remaining", Math.round(cooldownRemaining));
       if (!suggestionsCooldownTimerRef.current) {
         suggestionsCooldownTimerRef.current = setTimeout(() => {
