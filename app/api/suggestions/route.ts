@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
     }
 
     const t0 = Date.now();
-    let rawContent = await runStream(0.65, 7000);
+    let rawContent = await runStream(0.7, 7000);
     const elapsed = Date.now() - t0;
     let parsed = extractSuggestions(rawContent);
 
@@ -206,8 +206,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ suggestions: [], parseError: true });
     }
 
+    // Server-side deduplication: drop any suggestion whose preview exactly matches
+    // a previously shown one — catches cases where the model ignores the SKIP instruction.
+    const prevSet = new Set((previousPreviews ?? []).map((p) => p.trim().toLowerCase()));
+
     const suggestions: Suggestion[] = parsed
-      .slice(0, 3)
+      .slice(0, 6) // take up to 6 so we still have 3 after deduplication
       .map((s) => ({
         id: genId(),
         type: (VALID_TYPES.includes(s.type as SuggestionType)
@@ -217,7 +221,8 @@ export async function POST(req: NextRequest) {
         detailPrompt: (s.detailPrompt ?? s.preview ?? "").trim(),
         timestamp: Date.now(),
       }))
-      .filter((s) => s.preview.length > 0);
+      .filter((s) => s.preview.length > 0 && !prevSet.has(s.preview.toLowerCase()))
+      .slice(0, 3);
 
     return NextResponse.json({ suggestions });
   } catch (err: unknown) {
