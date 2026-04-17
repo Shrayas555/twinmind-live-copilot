@@ -149,8 +149,10 @@ export async function POST(req: NextRequest) {
 
     // Hard-timeout wrapper using Promise.race — AbortController alone doesn't reliably
     // cancel mid-stream on the Groq SDK; race guarantees the caller gets "" within timeoutMs.
+    // Timer is cleared in finally so it doesn't leak when exec wins the race.
     async function runStream(temperature: number, timeoutMs: number): Promise<string> {
       const abort = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | null = null;
 
       const exec = async (): Promise<string> => {
         // stream:true avoids Groq's json_validate_failed (400) on openai/gpt-oss-120b
@@ -166,48 +168,35 @@ export async function POST(req: NextRequest) {
         return raw;
       };
 
-      const timeout = new Promise<string>((resolve) =>
-        setTimeout(() => { abort.abort(); resolve(""); }, timeoutMs)
-      );
+      const timeout = new Promise<string>((resolve) => {
+        timer = setTimeout(() => { abort.abort(); resolve(""); }, timeoutMs);
+      });
 
       try {
         return await Promise.race([exec(), timeout]);
       } catch (e) {
         if (abort.signal.aborted) return "";
         throw e;
+      } finally {
+        if (timer !== null) clearTimeout(timer);
       }
     }
 
-    // Fallback: when the primary model outputs non-JSON, use llama-3.3-70b-versatile with
-    // response_format: json_object — guaranteed valid JSON, much faster at this task.
-    async function runFallback(): Promise<string> {
-      const resp = await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        messages: llmMessages,
-        temperature: 0.3,
-        max_tokens: 600,
-        stream: false,
-        response_format: { type: "json_object" },
-      });
-      return resp.choices[0]?.message?.content ?? "";
-    }
-
+    const t0 = Date.now();
     let rawContent = await runStream(0.65, 7000);
+    const elapsed = Date.now() - t0;
     let parsed = extractSuggestions(rawContent);
 
-    // On parse failure fall back to llama — same-model retries just repeat the same bad output.
-    if (!parsed.length) {
-      console.warn("[suggestions] Primary model parse failed, falling back to llama-3.3-70b-versatile");
-      try {
-        rawContent = await runFallback();
-        parsed = extractSuggestions(rawContent);
-      } catch (fallbackErr) {
-        console.error("[suggestions] Fallback also failed:", fallbackErr);
-      }
+    // Retry once at lower temperature only on fast parse failures (<5s).
+    // If the first attempt timed out (elapsed ~7s), retrying would just double the wait.
+    if (!parsed.length && elapsed < 5000) {
+      console.warn("[suggestions] Parse failed, retrying at temperature 0.3");
+      rawContent = await runStream(0.3, 5000);
+      parsed = extractSuggestions(rawContent);
     }
 
     if (!parsed.length) {
-      console.error("[suggestions] JSON extraction failed after fallback. Raw output:", rawContent.slice(0, 400));
+      console.error("[suggestions] JSON extraction failed. Raw output:", rawContent.slice(0, 400));
       return NextResponse.json({ suggestions: [], parseError: true });
     }
 
