@@ -29,8 +29,9 @@ const MIN_TRANSCRIPT_WORDS = 5;
 
 function buildPreviousSuggestionsBlock(previousPreviews: string[]): string {
   if (!previousPreviews.length) return "";
-  const items = previousPreviews.map((p) => `• ${p}`).join("\n");
-  return `⛔ ALREADY SHOWN — these angles are USED UP. Do NOT repeat or rephrase any of them. Every suggestion below must be genuinely new:\n${items}\n\n`;
+  // Plain numbered list — no emoji, no bullet symbols that might bleed into model output style
+  const items = previousPreviews.map((p, i) => `${i + 1}. ${p}`).join("\n");
+  return `ALREADY SHOWN (do NOT repeat or rephrase any of these):\n${items}\n\n`;
 }
 
 /**
@@ -139,31 +140,42 @@ export async function POST(req: NextRequest) {
       .replace("{lastExchange}", lastExchange ?? transcript.split(/\s+/).slice(-60).join(" "))
       .replace("{previousSuggestionsBlock}", previousSuggestionsBlock);
 
-    // Use streaming to avoid Groq's json_validate_failed (400) error.
-    // response_format:json_object causes Groq to validate the full output strictly —
-    // openai/gpt-oss-120b intermittently fails this even when output is valid JSON.
-    // With stream:true Groq skips that validation; we accumulate tokens and parse ourselves.
-    const stream = await groq.chat.completions.create({
-      model: model || GROQ_SUGGESTIONS_MODEL,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: userMessage },
-      ],
-      temperature: 0.65,
-      max_tokens: 900,
-      stream: true,
-    });
+    const llmMessages: { role: "system" | "user"; content: string }[] = [
+      { role: "system", content: system },
+      { role: "user", content: userMessage },
+    ];
+    const llmModel = model || GROQ_SUGGESTIONS_MODEL;
 
-    let rawContent = "";
-    for await (const chunk of stream) {
-      rawContent += chunk.choices[0]?.delta?.content ?? "";
+    async function runStream(temperature: number): Promise<string> {
+      // stream:true avoids Groq's json_validate_failed (400) on openai/gpt-oss-120b
+      const stream = await groq.chat.completions.create({
+        model: llmModel,
+        messages: llmMessages,
+        temperature,
+        max_tokens: 900,
+        stream: true,
+      });
+      let raw = "";
+      for await (const chunk of stream) {
+        raw += chunk.choices[0]?.delta?.content ?? "";
+      }
+      return raw;
     }
 
-    const parsed = extractSuggestions(rawContent);
+    let rawContent = await runStream(0.65);
+    let parsed = extractSuggestions(rawContent);
+
+    // Auto-retry once at lower temperature — openai/gpt-oss-120b occasionally outputs
+    // explanatory text before/after the JSON, especially on longer prompts.
+    // Lower temperature forces more deterministic, format-compliant output.
+    if (!parsed.length) {
+      console.warn("[suggestions] First attempt parse failed, retrying at temperature 0.3");
+      rawContent = await runStream(0.3);
+      parsed = extractSuggestions(rawContent);
+    }
 
     if (!parsed.length) {
-      console.error("[suggestions] JSON extraction failed. Raw output:", rawContent.slice(0, 400));
-      // Return a parse-error flag so the client can surface it rather than silently drop the batch
+      console.error("[suggestions] JSON extraction failed after retry. Raw output:", rawContent.slice(0, 400));
       return NextResponse.json({ suggestions: [], parseError: true });
     }
 
