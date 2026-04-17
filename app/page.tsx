@@ -6,7 +6,6 @@ import SuggestionsPanel from "@/components/SuggestionsPanel";
 import ChatPanel from "@/components/ChatPanel";
 import SettingsModal from "@/components/SettingsModal";
 import ErrorBanner from "@/components/ErrorBanner";
-import DebugLog from "@/components/DebugLog";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useSettings } from "@/hooks/useSettings";
 import { getContextWindow, getSuggestionsContext, getLastExchange, genId } from "@/lib/defaults";
@@ -17,7 +16,6 @@ import type {
   Suggestion,
   SessionExport,
   AppSettings,
-  LogEntry,
 } from "@/lib/types";
 
 export default function Home() {
@@ -36,14 +34,6 @@ export default function Home() {
   const [chunkTick, setChunkTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
-
-  const addLog = useCallback((entry: Omit<LogEntry, "id" | "timestamp">) => {
-    setLogEntries((prev) => [
-      ...prev.slice(-99), // keep last 100
-      { ...entry, id: genId(), timestamp: Date.now() },
-    ]);
-  }, []);
 
   const transcriptRef = useRef<TranscriptChunk[]>([]);
   const isRecordingRef = useRef(false);
@@ -167,7 +157,6 @@ export default function Home() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Request failed" }));
         const msg = err.error ?? "Failed to generate suggestions";
-        addLog({ type: "suggestions", status: "error", durationMs: Date.now() - t0, detail: msg });
         setError(msg);
         consecutiveSuggestionFailuresRef.current++;
         failureBackoffMs = Math.min(15000 * consecutiveSuggestionFailuresRef.current, 60000);
@@ -186,7 +175,6 @@ export default function Home() {
         const detail = data.rawSample
           ? `JSON parse error. Model output: ${data.rawSample}`
           : "JSON parse error — model returned unparseable output.";
-        addLog({ type: "suggestions", status: "error", durationMs: Date.now() - t0, detail });
         consecutiveSuggestionFailuresRef.current++;
         failureBackoffMs = Math.min(15000 * consecutiveSuggestionFailuresRef.current, 60000);
         return;
@@ -200,7 +188,6 @@ export default function Home() {
           timestamp: Date.now(),
           transcriptLength: transcript.length,
         };
-        addLog({ type: "suggestions", status: "success", durationMs: Date.now() - t0, detail: `${data.suggestions.length} suggestions · model: ${s.suggestionsModel}` });
         // Keep every batch for the whole session (no cap / no trim); sync ref immediately for chained/pending calls
         setSuggestionBatches((prev) => {
           const next = [...prev, batch];
@@ -215,7 +202,6 @@ export default function Home() {
         return;
       }
       const msg = e instanceof Error ? e.message : "Network error — check your connection.";
-      addLog({ type: "suggestions", status: "error", durationMs: Date.now() - t0, detail: msg });
       setError(msg);
       consecutiveSuggestionFailuresRef.current++;
       failureBackoffMs = Math.min(15000 * consecutiveSuggestionFailuresRef.current, 60000);
@@ -233,7 +219,7 @@ export default function Home() {
         });
       }
     }
-  }, [addLog]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     generateSuggestionsRef.current = generateSuggestions;
@@ -268,11 +254,9 @@ export default function Home() {
     onChunkTranscribed: handleChunkTranscribed,
     onChunkStarted: onRecorderChunkStarted,
     onError: (msg: string) => {
-      addLog({ type: "transcribe", status: "error", durationMs: 0, detail: msg });
       setError(msg);
     },
     onChunkSuccess: (durationMs: number) => {
-      addLog({ type: "transcribe", status: "success", durationMs, detail: `Whisper chunk transcribed (${settings.transcriptionModel})` });
     },
   });
 
@@ -368,7 +352,6 @@ export default function Home() {
         if (!res.ok || !res.body) {
           const errBody = await res.json().catch(() => ({ error: "Chat request failed" }));
           const msg = errBody.error ?? "Chat request failed";
-          addLog({ type: "chat", status: "error", durationMs: Date.now() - t0, detail: msg });
           setError(msg);
           return;
         }
@@ -405,10 +388,8 @@ export default function Home() {
         }
 
         if (streamError) {
-          addLog({ type: "chat", status: "error", durationMs: Date.now() - t0, detail: streamError });
           setError(streamError);
         } else if (full) {
-          addLog({ type: "chat", status: "success", durationMs: Date.now() - t0, detail: `${full.length} chars · model: ${s.chatModel}` });
           setChatMessages((prev) => [
             ...prev,
             { id: genId(), role: "assistant", content: full, timestamp: Date.now() },
@@ -416,7 +397,6 @@ export default function Home() {
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Network error — check your connection.";
-        addLog({ type: "chat", status: "error", durationMs: Date.now() - t0, detail: msg });
         setError(msg);
       } finally {
         // After a long chat, Groq needs proportional recovery time before handling
@@ -435,7 +415,7 @@ export default function Home() {
         }
       }
     },
-    [addLog]
+    []  // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // ── User types in chat box ────────────────────────────────────────────────
@@ -660,7 +640,6 @@ export default function Home() {
         />
       )}
 
-      <DebugLog entries={logEntries} />
     </div>
   );
 }
