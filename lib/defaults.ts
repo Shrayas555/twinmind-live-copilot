@@ -1,12 +1,8 @@
 import {
   DEFAULT_SUGGESTIONS_PROMPT,
-  DEFAULT_SUGGESTIONS_SYSTEM,
-  DEFAULT_SUGGESTIONS_USER_TEMPLATE,
   DEFAULT_DETAILED_ANSWER_PROMPT,
   DEFAULT_CHAT_PROMPT,
 } from "./prompts";
-
-export { DEFAULT_SUGGESTIONS_SYSTEM, DEFAULT_SUGGESTIONS_USER_TEMPLATE };
 import type { AppSettings } from "./types";
 
 // Required by the TwinMind assignment spec: GPT-OSS 120B on Groq.
@@ -20,7 +16,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   transcriptionModel: GROQ_TRANSCRIPTION_MODEL,
   suggestionsModel: GROQ_SUGGESTIONS_MODEL,
   chatModel: GROQ_CHAT_MODEL,
-  suggestionsSystemPrompt: DEFAULT_SUGGESTIONS_PROMPT,
+  suggestionsPrompt: DEFAULT_SUGGESTIONS_PROMPT,
   detailedAnswerPrompt: DEFAULT_DETAILED_ANSWER_PROMPT,
   chatSystemPrompt: DEFAULT_CHAT_PROMPT,
   // Last ~600 words for suggestions — ~3 minutes of speech, enough for recency without diluting signal

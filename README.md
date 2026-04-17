@@ -70,10 +70,12 @@ app/
   api/chat/route.ts        — SSE streaming chat endpoint
 
 components/
-  TranscriptPanel.tsx      — mic button, chunk list, auto-scroll
-  SuggestionsPanel.tsx     — batched suggestion cards with type badges, collapse
-  ChatPanel.tsx            — streaming chat with inline Markdown renderer
+  TranscriptPanel.tsx      — mic button, chunk list, word count, auto-scroll
+  SuggestionsPanel.tsx     — batched suggestion cards with type badges, type legend
+  ChatPanel.tsx            — streaming chat with Markdown renderer (headers, bold, code, lists)
   SettingsModal.tsx        — tabbed: API key · models · prompts · context sizes
+  ErrorBanner.tsx          — typed error display with countdown for rate-limit errors
+  DebugLog.tsx             — collapsible API call log with latency and copy-all
 
 hooks/
   useAudioRecorder.ts      — MediaRecorder stop/restart chunking every N seconds
@@ -81,8 +83,9 @@ hooks/
 
 lib/
   types.ts                 — shared TypeScript interfaces
-  prompts.ts               — default engineered prompts
-  defaults.ts              — settings defaults, getContextWindow, formatTimestamp
+  prompts.ts               — default engineered prompts (suggestions, detailed answer, chat)
+  defaults.ts              — settings defaults, getSuggestionsContext, getContextWindow
+  groqError.ts             — Groq error parsing: status codes → user-readable messages
 ```
 
 ### Audio chunking
@@ -97,7 +100,7 @@ Every time a transcript chunk arrives, suggestions regenerate. The middle-column
 
 **Context strategy — two-tier window:** The opening 60 words set meeting type ("Hi, this is Sarah from Acme…" → sales call). The recent 600 words are what's actionable right now. Both are sent together so the model has context for both "what kind of meeting" and "what just happened."
 
-**Last exchange spotlight:** `getLastExchange()` extracts the last 4 sentences (80-word fallback for unpunctuated Whisper output) as a dedicated section. The model triages on this first — not a rolling average of the transcript.
+**Last exchange spotlight:** The latest `TranscriptChunk.text` is sent directly as `lastExchange` — it IS what was said in the last 15–30 seconds, no sentence parsing needed. `getLastExchange()` is only used as a fallback when no chunks exist yet. The model triages on this section first, not a rolling average of the transcript.
 
 **Anti-repetition:** The last **three** suggestion batches’ preview lines are sent as `previousPreviews` so the model avoids repeating the same angles while keeping the blocklist small enough that later batches stay creative.
 
@@ -165,3 +168,7 @@ The **Export** button downloads a complete JSON file:
 - Every suggestion batch (type + preview + detailPrompt)
 - Full chat history: display content, full API content for suggestion clicks, suggestion type, timestamps
 - Session metadata: duration, model names
+
+## API log (bottom-right)
+
+A collapsible **Logs** button in the bottom-right corner shows every API call (TRANSCRIBE / SUGGESTIONS / CHAT) with status (OK / ERR), latency, and detail. **Copy all** exports the log as plain text. Useful for verifying latency and diagnosing errors during a live demo or evaluation.

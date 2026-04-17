@@ -40,7 +40,7 @@ export interface AppSettings {
   transcriptionModel: string;
   suggestionsModel: string;
   chatModel: string;
-  suggestionsSystemPrompt: string;
+  suggestionsPrompt: string;
   detailedAnswerPrompt: string;
   chatSystemPrompt: string;
   suggestionsContextWords: number;

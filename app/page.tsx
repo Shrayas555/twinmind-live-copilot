@@ -106,7 +106,7 @@ export default function Home() {
         body: JSON.stringify({
           transcript: context,
           lastExchange,
-          systemPrompt: s.suggestionsSystemPrompt,
+          systemPrompt: s.suggestionsPrompt,
           apiKey: s.groqApiKey,
           model: s.suggestionsModel,
           previousPreviews,

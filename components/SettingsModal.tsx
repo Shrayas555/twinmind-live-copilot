@@ -36,7 +36,7 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
   const resetPrompts = () => {
     setLocal((prev) => ({
       ...prev,
-      suggestionsSystemPrompt: DEFAULT_SETTINGS.suggestionsSystemPrompt,
+      suggestionsPrompt: DEFAULT_SETTINGS.suggestionsPrompt,
       detailedAnswerPrompt: DEFAULT_SETTINGS.detailedAnswerPrompt,
       chatSystemPrompt: DEFAULT_SETTINGS.chatSystemPrompt,
     }));
@@ -203,14 +203,14 @@ function SuggestionsPromptTab({
   set: (key: keyof AppSettings, value: string | number) => void;
   resetPrompts: () => void;
 }) {
-  const idx = local.suggestionsSystemPrompt.indexOf(SEP);
-  const systemPart = idx !== -1 ? local.suggestionsSystemPrompt.slice(0, idx).trim() : local.suggestionsSystemPrompt;
-  const userPart = idx !== -1 ? local.suggestionsSystemPrompt.slice(idx + SEP.length).trim() : "";
+  const idx = local.suggestionsPrompt.indexOf(SEP);
+  const systemPart = idx !== -1 ? local.suggestionsPrompt.slice(0, idx).trim() : local.suggestionsPrompt;
+  const userPart = idx !== -1 ? local.suggestionsPrompt.slice(idx + SEP.length).trim() : "";
 
   const updateSystem = (v: string) =>
-    set("suggestionsSystemPrompt", v + "\n\n" + SEP + "\n\n" + userPart);
+    set("suggestionsPrompt", v + "\n\n" + SEP + "\n\n" + userPart);
   const updateUser = (v: string) =>
-    set("suggestionsSystemPrompt", systemPart + "\n\n" + SEP + "\n\n" + v);
+    set("suggestionsPrompt", systemPart + "\n\n" + SEP + "\n\n" + v);
 
   return (
     <>
