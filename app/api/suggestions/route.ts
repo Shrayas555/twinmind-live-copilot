@@ -189,15 +189,22 @@ export async function POST(req: NextRequest) {
     }
 
     const t0 = Date.now();
-    let rawContent = await runStream(0.7, 7000);
+    // 10s gives the model headroom past the old 7s limit — catches near-timeout
+    // responses that would otherwise return empty and register as parse errors.
+    let rawContent = await runStream(0.7, 10000);
     const elapsed = Date.now() - t0;
     let parsed = extractSuggestions(rawContent);
 
-    // Retry once at lower temperature only on fast parse failures (<5s).
-    // If the first attempt timed out (elapsed ~7s), retrying would just double the wait.
-    if (!parsed.length && elapsed < 5000) {
-      console.warn("[suggestions] Parse failed, retrying at temperature 0.3");
-      rawContent = await runStream(0.3, 5000);
+    if (!parsed.length) {
+      if (!rawContent) {
+        // Timed out (empty content) — Groq was momentarily busy; retry once quickly.
+        console.warn("[suggestions] Timed out, retrying at temperature 0.5");
+        rawContent = await runStream(0.5, 7000);
+      } else if (elapsed < 5000) {
+        // Fast parse failure (model returned non-JSON) — retry at lower temperature.
+        console.warn("[suggestions] Parse failed, retrying at temperature 0.3");
+        rawContent = await runStream(0.3, 5000);
+      }
       parsed = extractSuggestions(rawContent);
     }
 

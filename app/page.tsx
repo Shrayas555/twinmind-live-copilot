@@ -76,6 +76,14 @@ export default function Home() {
   const consecutiveSuggestionFailuresRef = useRef(0);
   const MIN_SUGGESTION_COOLDOWN_MS = 5000;
 
+  // Ref-based chat lock — React state is async so two rapid clicks can both pass
+  // an `if (isChatStreaming) return` guard before the state re-render. A ref is
+  // synchronous and closes the race window completely.
+  const isChatStreamingRef = useRef(false);
+  // Stable ref to generateSuggestions so streamChat can trigger pending suggestions
+  // after a chat completes without creating a circular useCallback dependency.
+  const generateSuggestionsRef = useRef<(() => void) | null>(null);
+
   const generateSuggestions = useCallback(async () => { // eslint-disable-line react-hooks/exhaustive-deps
     if (isSuggestionsInFlightRef.current) {
       suggestionsPendingRef.current = true;
@@ -96,6 +104,13 @@ export default function Home() {
           }
         }, cooldownRemaining);
       }
+      return;
+    }
+
+    // Defer while a chat call is streaming — running both simultaneously congests
+    // the shared Groq key and causes timeouts on both. Chat takes priority.
+    if (isChatStreamingRef.current) {
+      suggestionsPendingRef.current = true;
       return;
     }
 
@@ -205,6 +220,10 @@ export default function Home() {
     }
   }, [addLog]);
 
+  useEffect(() => {
+    generateSuggestionsRef.current = generateSuggestions;
+  }, [generateSuggestions]);
+
   // ── Chunk countdown (aligned with MediaRecorder segment length) ───────────
 
   const chunkEndAtRef = useRef<number | null>(null);
@@ -292,6 +311,11 @@ export default function Home() {
       // so we skip embedding it again in the system prompt — avoids sending ~6k duplicate words
       transcriptAlreadyInMessage = false
     ) => {
+      // Synchronous ref guard — closes the race window between two rapid clicks
+      // that both pass an async-state check before the first re-render.
+      if (isChatStreamingRef.current) return;
+      isChatStreamingRef.current = true;
+
       const s = settingsRef.current;
       setChatMessages((prev) => [...prev, displayUserMsg]);
       setIsChatStreaming(true);
@@ -373,8 +397,14 @@ export default function Home() {
         addLog({ type: "chat", status: "error", durationMs: Date.now() - t0, detail: msg });
         setError(msg);
       } finally {
+        isChatStreamingRef.current = false;
         setIsChatStreaming(false);
         setStreamingContent("");
+        // Fire any suggestions that were deferred while chat was streaming.
+        if (suggestionsPendingRef.current) {
+          suggestionsPendingRef.current = false;
+          queueMicrotask(() => generateSuggestionsRef.current?.());
+        }
       }
     },
     [addLog]
@@ -384,7 +414,7 @@ export default function Home() {
 
   const handleChatSend = useCallback(
     (text: string) => {
-      if (isChatStreaming) return;
+      if (isChatStreamingRef.current) return;
       const userMsg: ChatMessage = {
         id: genId(),
         role: "user",
@@ -397,14 +427,14 @@ export default function Home() {
       ];
       streamChat(history, userMsg);
     },
-    [isChatStreaming, chatMessages, streamChat]
+    [chatMessages, streamChat]
   );
 
   // ── Suggestion card clicked ───────────────────────────────────────────────
 
   const handleSuggestionClick = useCallback(
     (suggestion: Suggestion) => {
-      if (isChatStreaming) return;
+      if (isChatStreamingRef.current) return;
       const s = settingsRef.current;
 
       const transcriptContext = getContextWindow(
@@ -440,7 +470,7 @@ export default function Home() {
       // so skip re-embedding it in the system prompt (avoids ~6000 words of duplicate context)
       streamChat(history, displayMsg, true);
     },
-    [isChatStreaming, chatMessages, streamChat]
+    [chatMessages, streamChat]
   );
 
   // ── Export ────────────────────────────────────────────────────────────────
