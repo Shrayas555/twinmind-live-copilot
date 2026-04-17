@@ -78,7 +78,7 @@ export default function Home() {
   // after a chat completes without creating a circular useCallback dependency.
   const generateSuggestionsRef = useRef<(() => void) | null>(null);
 
-  const generateSuggestions = useCallback(async () => { // eslint-disable-line react-hooks/exhaustive-deps
+  const generateSuggestions = useCallback(async (force = false) => { // eslint-disable-line react-hooks/exhaustive-deps
     if (isSuggestionsInFlightRef.current) {
       suggestionsPendingRef.current = true;
       return;
@@ -112,6 +112,14 @@ export default function Home() {
     const transcript = transcriptRef.current.map((c) => c.text).join(" ");
 
     if (!transcript.trim() || !s.groqApiKey) return;
+
+    // Skip if transcript hasn't grown enough since the last batch — prevents redundant
+    // calls when chunks arrive faster than speech (silence chunks, rapid reloads, etc.).
+    // ~150 chars ≈ 30 words. Bypassed when the user explicitly hits reload (force=true).
+    if (!force) {
+      const lastBatch = suggestionBatchesRef.current[suggestionBatchesRef.current.length - 1];
+      if (lastBatch && transcript.length - lastBatch.transcriptLength < 150) return;
+    }
 
     isSuggestionsInFlightRef.current = true;
     setIsSuggestionsQueued(false);
@@ -208,9 +216,14 @@ export default function Home() {
     } finally {
       suggestionsAbortRef.current = null;
       isSuggestionsInFlightRef.current = false;
-      // Push lastSuggestionEndTimeRef forward by backoff so the cooldown check naturally
-      // enforces the longer wait. On success failureBackoffMs is 0 — normal 5s applies.
-      lastSuggestionEndTimeRef.current = Date.now() + failureBackoffMs;
+      // After a slow successful call (>5s), add extra cooldown proportional to the
+      // excess so Groq has time to recover. A 9s call → 4s extra → 12s total gap.
+      // This auto-throttles the feedback loop that makes long meetings progressively slower.
+      const callDurationMs = Date.now() - t0;
+      const slowCallExtraMs = !failureBackoffMs && callDurationMs > 5000
+        ? Math.min(callDurationMs - 5000, 10000)
+        : 0;
+      lastSuggestionEndTimeRef.current = Date.now() + failureBackoffMs + slowCallExtraMs;
       setIsSuggestionsLoading(false);
       if (suggestionsPendingRef.current) {
         suggestionsPendingRef.current = false;
@@ -618,7 +631,7 @@ export default function Home() {
               if (isRecording) {
                 flushChunk();
               } else {
-                generateSuggestions();
+                generateSuggestions(true); // force=true: bypass new-speech check
               }
             }}
             onSuggestionClick={handleSuggestionClick}
