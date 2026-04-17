@@ -27,14 +27,6 @@ const VALID_TYPES: SuggestionType[] = [
 // (which may have only 5-10 words if the user started speaking mid-chunk) still fires.
 const MIN_TRANSCRIPT_WORDS = 5;
 
-function buildPreviousSuggestionsBlock(previousPreviews: string[]): string {
-  if (!previousPreviews.length) return "";
-  // Inline format — NOT a numbered list. Numbered lists bleed into the model's output
-  // style and cause it to write reasoning prose instead of JSON.
-  const quoted = previousPreviews.map((p) => `"${p}"`).join(" · ");
-  return `SKIP (already shown to user — do not repeat): ${quoted}\n\n`;
-}
-
 /**
  * The settings-editable "systemPrompt" field is a combined string
  * (system + "---USER TEMPLATE---" + user template). Split it here.
@@ -148,7 +140,6 @@ export async function POST(req: NextRequest) {
 
     const groq = new Groq({ apiKey });
 
-    const previousSuggestionsBlock = buildPreviousSuggestionsBlock(previousPreviews ?? []);
     const { system, userTemplate } = splitPrompt(systemPrompt ?? DEFAULT_SUGGESTIONS_PROMPT);
 
     const userMessage = (userTemplate || DEFAULT_SUGGESTIONS_USER_TEMPLATE)

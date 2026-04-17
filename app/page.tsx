@@ -535,11 +535,10 @@ export default function Home() {
             nextChunkIn={nextChunkIn}
             onRefresh={() => {
               if (isRecording) {
-                // Generate from current transcript immediately (~1.7s) so the user
-                // sees a fresh batch without waiting for transcription to finish.
-                // flushChunk() transcribes the partial audio in parallel — when it
-                // lands, the pending-ref fires a follow-up batch with the new speech.
-                if (transcriptChunks.length > 0) generateSuggestions();
+                // flushChunk() transcribes the partial audio; handleChunkTranscribed
+                // will fire generateSuggestions() automatically when it lands.
+                // Calling generateSuggestions() here too caused a double Groq call
+                // which congested the second request into the 7s timeout.
                 flushChunk();
               } else {
                 generateSuggestions();
