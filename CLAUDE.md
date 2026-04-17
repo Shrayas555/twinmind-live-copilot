@@ -78,14 +78,17 @@ JSON validation fails intermittently on `openai/gpt-oss-120b`. We accumulate tok
 with a robust `indexOf/lastIndexOf` extractor. `OUTPUT RULE` at the end of the system prompt
 enforces that the first character must be `{`.
 
-**Anti-repetition:** last 3 batches' previews sent as `previousPreviews` (inline quoted format —
-NOT a numbered list, which bleeds into model output style).
+**Anti-repetition:** last batch's previews sent as `previousPreviews` — used server-side only
+for deduplication after generation. The model never sees them; `{previousSuggestionsBlock}` is
+replaced with "" in the user template.
 
 **Concurrency:** `isSuggestionsInFlightRef` prevents concurrent calls. If a new chunk arrives
 mid-flight, `suggestionsPendingRef` queues a follow-up via `queueMicrotask`.
 
-**Timeout:** `runStream` uses `Promise.race` with a 7s timeout. Retry fires at temp=0.3 only
-when first attempt fails fast (<5s) — a slow timeout does not double-wait.
+**Timeout:** `runStream` uses `Promise.race`. Initial call: 10s timeout, temp=0.7. Two retry paths:
+- Timeout (empty content) → retry at temp=0.5, 7s
+- Fast parse failure (<5s elapsed) → retry at temp=0.3, 5s
+A slow timeout does not trigger the fast-failure retry — no double-wait.
 
 ## How suggestion clicks work
 

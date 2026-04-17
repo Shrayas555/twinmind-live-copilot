@@ -95,11 +95,15 @@ Every time a transcript chunk arrives, three suggestions are generated. The midd
 
 **Last exchange spotlight:** The latest Whisper chunk is sent as a dedicated `lastExchange` section — it IS what was said in the last 15–30 seconds, no sentence parsing. The model triages on this section first, not a rolling average.
 
-**Anti-repetition:** The last three batches' previews are sent as `previousPreviews` so the model avoids repeating the same angles while keeping the blocklist small enough that later batches stay creative.
+**Anti-repetition:** The last batch's previews are sent as `previousPreviews` to the server, which filters out any suggestion whose preview exactly matches one already shown. The model itself doesn't see the list — deduplication happens server-side after generation.
 
 **Concurrency lock:** A ref-based lock (`isSuggestionsInFlightRef`) prevents concurrent Groq calls. If a new chunk arrives mid-flight, `suggestionsPendingRef` queues a follow-up via `queueMicrotask` — no refresh is ever lost.
 
-**Timeout:** Each stream attempt has a 7-second hard timeout via `Promise.race`. A retry at lower temperature fires only when the first attempt fails fast (<5s) — a timeout does not double-wait.
+**Timeout:** The initial stream attempt has a 10-second hard timeout via `Promise.race`. Two retry paths:
+- **Timeout** (empty content): retry at `temperature=0.5`, 7s timeout — Groq was momentarily busy
+- **Fast parse failure** (<5s, non-JSON output): retry at `temperature=0.3`, 5s timeout
+
+A slow timeout does not trigger the fast-failure retry — no double-wait.
 
 ### Suggestion types
 
@@ -162,7 +166,7 @@ Context size, goal, and format are fundamentally different. Suggestions: 600-wor
 
 **No word-by-word transcript:** Whisper processes complete audio blobs. Real-time word-level streaming requires a different provider (Deepgram, AssemblyAI) or local Whisper with VAD. The 30-second chunk model is simpler and produces accurate, complete sentences.
 
-**Parallel reload (immediate + flush):** When the reload button is pressed while recording, suggestions generate immediately from the existing transcript (~1.7s) and the current audio chunk is flushed in parallel. When the flush lands, a pending-ref fires a second batch with the new speech. This gives the user something fast while still picking up what was just said.
+**Reload while recording:** Pressing the refresh button calls `flushChunk()`, which stops the current MediaRecorder early. `onstop` fires, the partial audio is transcribed by Whisper, and `handleChunkTranscribed` then triggers suggestion generation. There is no parallel immediate generation — the single batch arrives after the flush-transcribe cycle completes.
 
 ---
 
