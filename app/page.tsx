@@ -68,10 +68,32 @@ export default function Home() {
   // refresh is lost forever and the UI stays stuck on one batch.
   const isSuggestionsInFlightRef = useRef(false);
   const suggestionsPendingRef = useRef(false);
+  // Minimum gap between suggestion calls — prevents Groq congestion when rapid
+  // reloads or back-to-back transcription events queue calls immediately.
+  const lastSuggestionEndTimeRef = useRef(0);
+  const suggestionsCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const MIN_SUGGESTION_COOLDOWN_MS = 5000;
 
   const generateSuggestions = useCallback(async () => { // eslint-disable-line react-hooks/exhaustive-deps
     if (isSuggestionsInFlightRef.current) {
       suggestionsPendingRef.current = true;
+      return;
+    }
+
+    // Enforce minimum gap between Groq calls to avoid congestion timeouts.
+    // If within cooldown, queue a deferred retry (only one timer at a time).
+    const cooldownRemaining = MIN_SUGGESTION_COOLDOWN_MS - (Date.now() - lastSuggestionEndTimeRef.current);
+    if (cooldownRemaining > 0) {
+      suggestionsPendingRef.current = true;
+      if (!suggestionsCooldownTimerRef.current) {
+        suggestionsCooldownTimerRef.current = setTimeout(() => {
+          suggestionsCooldownTimerRef.current = null;
+          if (suggestionsPendingRef.current) {
+            suggestionsPendingRef.current = false;
+            void generateSuggestions();
+          }
+        }, cooldownRemaining);
+      }
       return;
     }
 
@@ -157,11 +179,12 @@ export default function Home() {
       setError(msg);
     } finally {
       isSuggestionsInFlightRef.current = false;
+      lastSuggestionEndTimeRef.current = Date.now();
       setIsSuggestionsLoading(false);
       if (suggestionsPendingRef.current) {
         suggestionsPendingRef.current = false;
         queueMicrotask(() => {
-          void generateSuggestions();
+          void generateSuggestions(); // cooldown check runs at the top of the next call
         });
       }
     }
