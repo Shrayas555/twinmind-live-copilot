@@ -151,19 +151,13 @@ export async function POST(req: NextRequest) {
     const previousSuggestionsBlock = buildPreviousSuggestionsBlock(previousPreviews ?? []);
     const { system, userTemplate } = splitPrompt(systemPrompt ?? DEFAULT_SUGGESTIONS_PROMPT);
 
-    // Append SKIP constraint to the system prompt — NOT the user message.
-    // In the user message it bleeds into the model's output style and causes JSON parse failures.
-    const systemWithContext = previousSuggestionsBlock
-      ? system + "\n\n" + previousSuggestionsBlock.trim()
-      : system;
-
     const userMessage = (userTemplate || DEFAULT_SUGGESTIONS_USER_TEMPLATE)
       .replace("{transcript}", transcript)
       .replace("{lastExchange}", lastExchange ?? transcript.split(/\s+/).slice(-60).join(" "))
       .replace("{previousSuggestionsBlock}", "");
 
     const llmMessages: { role: "system" | "user"; content: string }[] = [
-      { role: "system", content: systemWithContext },
+      { role: "system", content: system },
       { role: "user", content: userMessage },
     ];
     const llmModel = model || GROQ_SUGGESTIONS_MODEL;
@@ -178,7 +172,7 @@ export async function POST(req: NextRequest) {
       const exec = async (): Promise<string> => {
         // stream:true avoids Groq's json_validate_failed (400) on openai/gpt-oss-120b
         const stream = await groq.chat.completions.create(
-          { model: llmModel, messages: llmMessages, temperature, max_tokens: 600, stream: true },
+          { model: llmModel, messages: llmMessages, temperature, max_tokens: 800, stream: true },
           { signal: abort.signal }
         );
         let raw = "";
@@ -217,8 +211,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (!parsed.length) {
-      console.error("[suggestions] JSON extraction failed. Raw output:", rawContent.slice(0, 400));
-      return NextResponse.json({ suggestions: [], parseError: true });
+      const rawSample = rawContent.slice(0, 300);
+      console.error("[suggestions] JSON extraction failed. Raw output:", rawSample);
+      return NextResponse.json({ suggestions: [], parseError: true, rawSample });
     }
 
     // Server-side deduplication: drop any suggestion whose preview exactly matches

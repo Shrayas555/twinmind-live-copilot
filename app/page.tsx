@@ -130,8 +130,10 @@ export default function Home() {
       }
 
       if (data.parseError) {
-        addLog({ type: "suggestions", status: "error", durationMs: Date.now() - t0, detail: "JSON parse error — model returned unparseable output. Will retry on next chunk." });
-        console.warn("[suggestions] Parse error — JSON extraction failed. Will retry on next chunk.");
+        const detail = data.rawSample
+          ? `JSON parse error. Model output: ${data.rawSample}`
+          : "JSON parse error — model returned unparseable output.";
+        addLog({ type: "suggestions", status: "error", durationMs: Date.now() - t0, detail });
         return;
       }
       if (data.suggestions?.length > 0) {
