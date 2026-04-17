@@ -6,7 +6,7 @@ import type { AppSettings } from "@/lib/types";
 
 // Bump this string whenever default prompts change.
 // On mismatch, prompts reset to new defaults while preserving the user's API key.
-const PROMPT_VERSION = "v3";
+const PROMPT_VERSION = "v4";
 const PROMPT_VERSION_KEY = "twinmind_prompt_version";
 
 export function useSettings() {
@@ -56,13 +56,5 @@ export function useSettings() {
     });
   }, []);
 
-  const resetPrompts = useCallback(() => {
-    updateSettings({
-      suggestionsSystemPrompt: DEFAULT_SETTINGS.suggestionsSystemPrompt,
-      detailedAnswerPrompt: DEFAULT_SETTINGS.detailedAnswerPrompt,
-      chatSystemPrompt: DEFAULT_SETTINGS.chatSystemPrompt,
-    });
-  }, [updateSettings]);
-
-  return { settings, updateSettings, resetPrompts, loaded };
+  return { settings, updateSettings, loaded };
 }

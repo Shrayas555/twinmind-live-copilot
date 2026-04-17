@@ -9,6 +9,8 @@ interface UseAudioRecorderOptions {
   onChunkTranscribed: (text: string) => void;
   /** Fired when a new MediaRecorder chunk begins — use for UI countdown until next transcript update. */
   onChunkStarted?: (info: { durationSec: number }) => void;
+  /** Fired after a successful transcription — use for logging. */
+  onChunkSuccess?: (durationMs: number) => void;
   onError: (msg: string) => void;
 }
 
@@ -18,6 +20,7 @@ export function useAudioRecorder({
   chunkDuration,
   onChunkTranscribed,
   onChunkStarted,
+  onChunkSuccess,
   onError,
 }: UseAudioRecorderOptions) {
   const [isRecording, setIsRecording] = useState(false);
@@ -33,18 +36,21 @@ export function useAudioRecorder({
   const apiKeyRef = useRef(apiKey);
   const modelRef = useRef(model);
   const onChunkTranscribedRef = useRef(onChunkTranscribed);
+  const onChunkSuccessRef = useRef(onChunkSuccess);
   const onErrorRef = useRef(onError);
   useEffect(() => {
     apiKeyRef.current = apiKey;
     modelRef.current = model;
     onChunkTranscribedRef.current = onChunkTranscribed;
+    onChunkSuccessRef.current = onChunkSuccess;
     onErrorRef.current = onError;
-  }, [apiKey, model, onChunkTranscribed, onError]);
+  }, [apiKey, model, onChunkTranscribed, onChunkSuccess, onError]);
 
   const transcribeBlob = useCallback(async (blob: Blob) => {
     if (blob.size < 1000) return; // skip silence
 
     setIsTranscribing(true);
+    const t0 = Date.now();
     try {
       const fd = new FormData();
       fd.append("audio", blob, "chunk.webm");
@@ -59,6 +65,7 @@ export function useAudioRecorder({
       }
       const data = await res.json();
       if (data.text?.trim()) {
+        onChunkSuccessRef.current?.(Date.now() - t0);
         onChunkTranscribedRef.current(data.text.trim());
       }
     } catch (e) {

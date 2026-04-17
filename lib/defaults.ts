@@ -54,11 +54,12 @@ export function getSuggestionsContext(text: string, recentWords: number): string
   const opening = words.slice(0, openingWords).join(" ");
   const recent = words.slice(-recentWords).join(" ");
 
-  // Only add the opening scene if there's a meaningful gap (>120 words between them)
+  // When opening and recent don't overlap, send both: meeting type + recency signal.
+  // Otherwise just send the recent window — always labeled so the model knows to focus here.
   if (words.length > recentWords + openingWords + 120) {
     return `[Meeting opening] ${opening}\n\n[Recent — focus here] ${recent}`;
   }
-  return recent;
+  return `[Recent — focus here] ${recent}`;
 }
 
 /**

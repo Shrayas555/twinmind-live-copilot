@@ -145,34 +145,7 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
           )}
 
           {tab === "prompts" && (
-            <>
-              <div className="flex justify-end">
-                <button
-                  onClick={resetPrompts}
-                  className="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition-colors"
-                >
-                  Reset all prompts to defaults
-                </button>
-              </div>
-              <Field
-                label="Live Suggestions Prompt"
-                hint="System prompt for generating the 3 suggestion cards. Use {transcript} as the placeholder."
-              >
-                <PromptArea value={local.suggestionsSystemPrompt} onChange={(v) => set("suggestionsSystemPrompt", v)} />
-              </Field>
-              <Field
-                label="Detailed Answer Prompt"
-                hint="Prompt used when a suggestion is clicked. Variables: {transcript}, {type}, {preview}, {detailPrompt}."
-              >
-                <PromptArea value={local.detailedAnswerPrompt} onChange={(v) => set("detailedAnswerPrompt", v)} />
-              </Field>
-              <Field
-                label="Chat System Prompt"
-                hint="System prompt for the chat panel. Use {transcript} as the placeholder."
-              >
-                <PromptArea value={local.chatSystemPrompt} onChange={(v) => set("chatSystemPrompt", v)} />
-              </Field>
-            </>
+            <SuggestionsPromptTab local={local} set={set} resetPrompts={resetPrompts} />
           )}
 
           {tab === "context" && (
@@ -216,6 +189,62 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
         </div>
       </div>
     </div>
+  );
+}
+
+const SEP = "---USER TEMPLATE---";
+
+function SuggestionsPromptTab({
+  local,
+  set,
+  resetPrompts,
+}: {
+  local: AppSettings;
+  set: (key: keyof AppSettings, value: string | number) => void;
+  resetPrompts: () => void;
+}) {
+  const idx = local.suggestionsSystemPrompt.indexOf(SEP);
+  const systemPart = idx !== -1 ? local.suggestionsSystemPrompt.slice(0, idx).trim() : local.suggestionsSystemPrompt;
+  const userPart = idx !== -1 ? local.suggestionsSystemPrompt.slice(idx + SEP.length).trim() : "";
+
+  const updateSystem = (v: string) =>
+    set("suggestionsSystemPrompt", v + "\n\n" + SEP + "\n\n" + userPart);
+  const updateUser = (v: string) =>
+    set("suggestionsSystemPrompt", systemPart + "\n\n" + SEP + "\n\n" + v);
+
+  return (
+    <>
+      <div className="flex justify-end">
+        <button
+          onClick={resetPrompts}
+          className="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition-colors"
+        >
+          Reset all prompts to defaults
+        </button>
+      </div>
+
+      <Field label="Suggestions — System Instructions" hint="Defines how the model reasons about the conversation. No placeholders needed here.">
+        <PromptArea value={systemPart} onChange={updateSystem} />
+      </Field>
+      <Field
+        label="Suggestions — User Message Template"
+        hint="Filled at runtime. Variables: {transcript}, {lastExchange}, {previousSuggestionsBlock}."
+      >
+        <PromptArea value={userPart} onChange={updateUser} />
+      </Field>
+      <Field
+        label="Detailed Answer Prompt"
+        hint="Used when a suggestion is clicked. Variables: {transcript}, {type}, {preview}, {detailPrompt}."
+      >
+        <PromptArea value={local.detailedAnswerPrompt} onChange={(v) => set("detailedAnswerPrompt", v)} />
+      </Field>
+      <Field
+        label="Chat System Prompt"
+        hint="System prompt for the chat panel. Variable: {transcript}."
+      >
+        <PromptArea value={local.chatSystemPrompt} onChange={(v) => set("chatSystemPrompt", v)} />
+      </Field>
+    </>
   );
 }
 

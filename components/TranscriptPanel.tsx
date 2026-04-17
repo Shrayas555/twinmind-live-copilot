@@ -109,6 +109,22 @@ export default function TranscriptPanel({
         )}
         <div ref={bottomRef} />
       </div>
+
+      {/* Word count footer */}
+      {chunks.length > 0 && (() => {
+        const wordCount = chunks.reduce((acc, c) => acc + c.text.trim().split(/\s+/).length, 0);
+        const minutes = Math.round(wordCount / 130); // ~130 wpm average speech
+        return (
+          <div className="px-4 py-1.5 border-t border-zinc-800/60 flex items-center gap-2">
+            <span className="text-[10px] text-zinc-600 font-mono">
+              ~{wordCount.toLocaleString()} words
+            </span>
+            {minutes > 0 && (
+              <span className="text-[10px] text-zinc-700 font-mono">· ~{minutes} min</span>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import SuggestionsPanel from "@/components/SuggestionsPanel";
 import ChatPanel from "@/components/ChatPanel";
 import SettingsModal from "@/components/SettingsModal";
 import ErrorBanner from "@/components/ErrorBanner";
+import DebugLog from "@/components/DebugLog";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useSettings } from "@/hooks/useSettings";
 import { getContextWindow, getSuggestionsContext, getLastExchange, genId } from "@/lib/defaults";
@@ -16,6 +17,7 @@ import type {
   Suggestion,
   SessionExport,
   AppSettings,
+  LogEntry,
 } from "@/lib/types";
 
 export default function Home() {
@@ -33,6 +35,14 @@ export default function Home() {
   const [chunkTick, setChunkTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+
+  const addLog = useCallback((entry: Omit<LogEntry, "id" | "timestamp">) => {
+    setLogEntries((prev) => [
+      ...prev.slice(-99), // keep last 100
+      { ...entry, id: genId(), timestamp: Date.now() },
+    ]);
+  }, []);
 
   const transcriptRef = useRef<TranscriptChunk[]>([]);
   const isRecordingRef = useRef(false);
@@ -59,7 +69,7 @@ export default function Home() {
   const isSuggestionsInFlightRef = useRef(false);
   const suggestionsPendingRef = useRef(false);
 
-  const generateSuggestions = useCallback(async () => {
+  const generateSuggestions = useCallback(async () => { // eslint-disable-line react-hooks/exhaustive-deps
     if (isSuggestionsInFlightRef.current) {
       suggestionsPendingRef.current = true;
       return;
@@ -77,8 +87,10 @@ export default function Home() {
     const transcriptLenAtRequest = transcript.length;
 
     const context = getSuggestionsContext(transcript, s.suggestionsContextWords);
-    // Last 4 sentences — explicit spotlight so the model immediately sees what was JUST said
-    const lastExchange = getLastExchange(transcript, 4);
+    // Use the latest Whisper chunk directly — it IS what was just said (15–30s of speech).
+    // Fallback to sentence-parsed extraction only when no chunks exist yet.
+    const latestChunk = transcriptRef.current[transcriptRef.current.length - 1];
+    const lastExchange = latestChunk?.text || getLastExchange(transcript, 4);
 
     // Last 3 batches (max 9 previews) — enough anti-repetition without a huge blocklist.
     const recentBatches = suggestionBatchesRef.current.slice(-3);
@@ -86,6 +98,7 @@ export default function Home() {
       b.suggestions.map((s) => s.preview).filter(Boolean)
     );
 
+    const t0 = Date.now();
     try {
       const res = await fetch("/api/suggestions", {
         method: "POST",
@@ -102,7 +115,9 @@ export default function Home() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Request failed" }));
-        setError(err.error ?? "Failed to generate suggestions");
+        const msg = err.error ?? "Failed to generate suggestions";
+        addLog({ type: "suggestions", status: "error", durationMs: Date.now() - t0, detail: msg });
+        setError(msg);
         return;
       }
 
@@ -115,7 +130,7 @@ export default function Home() {
       }
 
       if (data.parseError) {
-        // Model output couldn't be parsed as JSON — log silently, will retry next chunk
+        addLog({ type: "suggestions", status: "error", durationMs: Date.now() - t0, detail: "JSON parse error — model returned unparseable output. Will retry on next chunk." });
         console.warn("[suggestions] Parse error — JSON extraction failed. Will retry on next chunk.");
         return;
       }
@@ -126,6 +141,7 @@ export default function Home() {
           timestamp: Date.now(),
           transcriptLength: transcript.length,
         };
+        addLog({ type: "suggestions", status: "success", durationMs: Date.now() - t0, detail: `${data.suggestions.length} suggestions · model: ${s.suggestionsModel}` });
         // Keep every batch for the whole session (no cap / no trim); sync ref immediately for chained/pending calls
         setSuggestionBatches((prev) => {
           const next = [...prev, batch];
@@ -134,7 +150,9 @@ export default function Home() {
         });
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Network error — check your connection.");
+      const msg = e instanceof Error ? e.message : "Network error — check your connection.";
+      addLog({ type: "suggestions", status: "error", durationMs: Date.now() - t0, detail: msg });
+      setError(msg);
     } finally {
       isSuggestionsInFlightRef.current = false;
       setIsSuggestionsLoading(false);
@@ -145,7 +163,7 @@ export default function Home() {
         });
       }
     }
-  }, []);
+  }, [addLog]);
 
   // ── Chunk countdown (aligned with MediaRecorder segment length) ───────────
 
@@ -175,7 +193,13 @@ export default function Home() {
     chunkDuration: settings.autoRefreshInterval,
     onChunkTranscribed: handleChunkTranscribed,
     onChunkStarted: onRecorderChunkStarted,
-    onError: setError,
+    onError: (msg: string) => {
+      addLog({ type: "transcribe", status: "error", durationMs: 0, detail: msg });
+      setError(msg);
+    },
+    onChunkSuccess: (durationMs: number) => {
+      addLog({ type: "transcribe", status: "success", durationMs, detail: `Whisper chunk transcribed (${settings.transcriptionModel})` });
+    },
   });
 
   useEffect(() => {
@@ -241,6 +265,7 @@ export default function Home() {
             s.detailedAnswerContextWords
           );
 
+      const t0 = Date.now();
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -256,7 +281,9 @@ export default function Home() {
 
         if (!res.ok || !res.body) {
           const errBody = await res.json().catch(() => ({ error: "Chat request failed" }));
-          setError(errBody.error ?? "Chat request failed");
+          const msg = errBody.error ?? "Chat request failed";
+          addLog({ type: "chat", status: "error", durationMs: Date.now() - t0, detail: msg });
+          setError(msg);
           return;
         }
 
@@ -292,21 +319,25 @@ export default function Home() {
         }
 
         if (streamError) {
+          addLog({ type: "chat", status: "error", durationMs: Date.now() - t0, detail: streamError });
           setError(streamError);
         } else if (full) {
+          addLog({ type: "chat", status: "success", durationMs: Date.now() - t0, detail: `${full.length} chars · model: ${s.chatModel}` });
           setChatMessages((prev) => [
             ...prev,
             { id: genId(), role: "assistant", content: full, timestamp: Date.now() },
           ]);
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Network error — check your connection.");
+        const msg = e instanceof Error ? e.message : "Network error — check your connection.";
+        addLog({ type: "chat", status: "error", durationMs: Date.now() - t0, detail: msg });
+        setError(msg);
       } finally {
         setIsChatStreaming(false);
         setStreamingContent("");
       }
     },
-    []
+    [addLog]
   );
 
   // ── User types in chat box ────────────────────────────────────────────────
@@ -530,6 +561,8 @@ export default function Home() {
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      <DebugLog entries={logEntries} />
     </div>
   );
 }

@@ -173,8 +173,8 @@ export default function ChatPanel({ messages, isStreaming, streamingContent, onS
 
 /**
  * Markdown renderer for AI responses.
- * Handles: **bold**, • / - / * bullets, 1. numbered lists, blank line spacing.
- * Whisper + LLM responses use Unicode • bullets — these are the most important to catch.
+ * Handles: ## headers, ### headers, **bold**, `inline code`,
+ * --- dividers, • / - / * bullets, 1. numbered lists, blank line spacing.
  */
 function MarkdownText({ text }: { text: string }) {
   const lines = text.split("\n");
@@ -182,9 +182,8 @@ function MarkdownText({ text }: { text: string }) {
   return (
     <div>
       {lines.map((line, i) => {
-        const isEmpty = line.trim() === "";
-        const isBullet = /^[•\-*]\s/.test(line);
-        const isNumbered = /^\d+\.\s/.test(line);
+        const trimmed = line.trim();
+        const isEmpty = trimmed === "";
 
         // Collapse consecutive blank lines into a single small gap
         if (isEmpty) {
@@ -192,10 +191,36 @@ function MarkdownText({ text }: { text: string }) {
           return prevWasEmpty ? null : <div key={i} className="h-2" />;
         }
 
-        let content = line;
-        if (isBullet) content = line.replace(/^[•\-*]\s/, "");
-        if (isNumbered) content = line.replace(/^\d+\.\s/, "");
-        const numPrefix = isNumbered ? (line.match(/^(\d+)\./)?.[1] ?? "") : "";
+        // Horizontal rule
+        if (trimmed === "---" || trimmed === "***" || trimmed === "___") {
+          return <hr key={i} className="border-zinc-700 my-2" />;
+        }
+
+        // ## Heading
+        if (trimmed.startsWith("## ")) {
+          return (
+            <p key={i} className="font-semibold text-white mt-3 mb-1 leading-snug">
+              {renderInline(trimmed.slice(3))}
+            </p>
+          );
+        }
+
+        // ### Heading
+        if (trimmed.startsWith("### ")) {
+          return (
+            <p key={i} className="font-semibold text-zinc-300 mt-2 mb-0.5 leading-snug text-[13px]">
+              {renderInline(trimmed.slice(4))}
+            </p>
+          );
+        }
+
+        const isBullet = /^[•\-*]\s/.test(trimmed);
+        const isNumbered = /^\d+\.\s/.test(trimmed);
+
+        let content = trimmed;
+        if (isBullet) content = trimmed.replace(/^[•\-*]\s/, "");
+        if (isNumbered) content = trimmed.replace(/^\d+\.\s/, "");
+        const numPrefix = isNumbered ? (trimmed.match(/^(\d+)\./)?.[1] ?? "") : "";
 
         const rendered = renderInline(content);
 
@@ -229,15 +254,24 @@ function MarkdownText({ text }: { text: string }) {
   );
 }
 
-/** Splits a line on **bold** markers and returns React nodes */
+/** Splits a line on **bold** and `code` markers and returns React nodes */
 function renderInline(text: string): React.ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-    /^\*\*.*\*\*$/.test(part) ? (
-      <strong key={i} className="text-white font-semibold">
-        {part.slice(2, -2)}
-      </strong>
-    ) : (
-      <span key={i}>{part}</span>
-    )
-  );
+  // Split on **bold** and `code` patterns
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) => {
+    if (/^\*\*.*\*\*$/.test(part)) {
+      return (
+        <strong key={i} className="text-white font-semibold">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (/^`.*`$/.test(part)) {
+      return (
+        <code key={i} className="bg-zinc-700/60 text-zinc-200 px-1 rounded font-mono text-[11px]">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
 }

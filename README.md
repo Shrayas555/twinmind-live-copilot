@@ -128,14 +128,20 @@ Streaming SSE. The system prompt gives the model the full transcript. All prior 
 
 ## Prompt Engineering Decisions
 
-**Why recency bias in the suggestions prompt:**
-Meetings have a short attention window. What was said 10 minutes ago is usually resolved or irrelevant. Weighting the last 2-3 exchanges more heavily surfaces what the participant can actually act on in the next 30 seconds.
+**Why the latest Whisper chunk is used directly as `lastExchange`:**
+The suggestions prompt has a dedicated "▶ LAST EXCHANGE" section that the model triages first. Initially I used `getLastExchange()` to parse the last 4 sentences from the full transcript — but sentence boundaries across Whisper chunk joins are unreliable and can split mid-thought. The latest `TranscriptChunk.text` IS what was just said in the last 15–30 seconds, no parsing needed. This change makes the "triage first on what was just said" instruction land exactly right.
 
-**Why `response_format: { type: "json_object" }` on the suggestions endpoint:**
-Without it, the model occasionally wraps the JSON in prose ("Here are your suggestions: [...]"), breaking parsing. Enforced JSON eliminates this failure mode. The API route also handles both `[]` and `{ suggestions: [] }` shapes defensively.
+**Why three asymmetric slots:**
+Slot 1 is always the most urgent (ANSWER if a question was asked — non-negotiable). Slot 2 deepens the conversation. Slot 3 is explicitly the "outsider angle" — what a brilliant domain expert who just walked into the room would notice that the participant is too close to see. This asymmetry produces more varied, higher-value batches than three equal slots.
+
+**Why recency bias in the suggestions prompt:**
+Meetings have a short attention window. What was said 10 minutes ago is usually resolved or irrelevant. 600 words ≈ 3 minutes of speech — the relevant window for what to surface right now.
+
+**Why `stream: true` instead of `response_format: json_object` on the suggestions endpoint:**
+`response_format: json_object` causes Groq to validate the full output strictly — `openai/gpt-oss-120b` intermittently fails this even when output is valid JSON (`json_validate_failed`). With `stream: true`, Groq skips strict validation; we accumulate tokens and parse ourselves with a robust `indexOf/lastIndexOf` extractor that handles brackets in string values.
 
 **Why two separate prompts for suggestions vs. detailed answers:**
-The context size, goal, and format are different. Suggestions: recent context, fast, punchy 130-char preview. Detailed answers: full transcript, structured with headers and bullets, thorough. One prompt trying to do both produces mediocre output at both.
+The context size, goal, and format are different. Suggestions: recent 600-word context, fast, punchy 130-char preview. Detailed answers: full 3000-word transcript, structured with headers and bullets, thorough. One prompt trying to do both produces mediocre output at both.
 
 **Why 600 words for suggestions context, 3000 for detailed answers:**
 600 words ≈ 3 minutes of speech — the relevant window for what to surface right now. 3000 words gives the detailed answer model enough context to reference specifics from earlier in the meeting.

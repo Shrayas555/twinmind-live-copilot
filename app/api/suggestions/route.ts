@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 import {
-  GROQ_SUGGESTIONS_MODEL,
   DEFAULT_SUGGESTIONS_SYSTEM,
   DEFAULT_SUGGESTIONS_USER_TEMPLATE,
-} from "@/lib/defaults";
-import { DEFAULT_SUGGESTIONS_PROMPT } from "@/lib/prompts";
+  DEFAULT_SUGGESTIONS_PROMPT,
+} from "@/lib/prompts";
+import { GROQ_SUGGESTIONS_MODEL, genId } from "@/lib/defaults";
 import type { Suggestion, SuggestionType } from "@/lib/types";
-import { genId } from "@/lib/defaults";
 import { parseGroqError, groqErrorStatus } from "@/lib/groqError";
 
 interface SuggestionRaw {
