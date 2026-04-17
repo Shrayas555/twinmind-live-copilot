@@ -64,34 +64,6 @@ const TYPE_CONFIG: Record<
   },
 };
 
-const LEGEND_ITEMS: { type: SuggestionType; desc: string }[] = [
-  { type: "ANSWER", desc: "Direct answer to a question just asked" },
-  { type: "QUESTION", desc: "Verbatim question to ask right now" },
-  { type: "TALKING_POINT", desc: "Key argument + concrete supporting fact" },
-  { type: "FACT_CHECK", desc: "Claimed figure vs. what is actually true" },
-  { type: "CLARIFICATION", desc: "Term definition + why alignment matters here" },
-];
-
-function SuggestionTypeLegend() {
-  return (
-    <div className="mt-6 space-y-2 px-1">
-      <p className="text-[11px] text-zinc-600 text-center mb-3">
-        Start recording — 3 context-aware suggestions appear every ~30s
-      </p>
-      {LEGEND_ITEMS.map(({ type, desc }) => {
-        const cfg = TYPE_CONFIG[type];
-        return (
-          <div key={type} className={`flex items-start gap-2.5 rounded-lg border px-3 py-2 ${cfg.bg} ${cfg.border} border opacity-60`}>
-            <span className={`text-[10px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded shrink-0 ${cfg.bg} ${cfg.color} ${cfg.border} border`}>
-              {cfg.label}
-            </span>
-            <p className="text-[11px] text-zinc-400 leading-snug pt-0.5">{desc}</p>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 function SuggestionCard({
   suggestion,
@@ -206,13 +178,11 @@ export default function SuggestionsPanel({
         )}
 
         {batches.length === 0 && !isBusy && (
-          isRecording ? (
-            <p className="text-zinc-600 text-sm italic text-center mt-8">
-              Recording… suggestions will appear after the first transcript chunk (~15s).
-            </p>
-          ) : (
-            <SuggestionTypeLegend />
-          )
+          <p className="text-zinc-600 text-sm italic text-center mt-8">
+            {isRecording
+              ? "Recording… suggestions will appear after the first transcript chunk (~15s)."
+              : "Start recording — suggestions appear every ~30s."}
+          </p>
         )}
 
         {/* Newest batch at top; older batches stack below at 50% opacity */}
