@@ -67,7 +67,6 @@ components/
   ChatPanel.tsx            Streaming chat, Markdown renderer
   SettingsModal.tsx        API key · models · prompts · context sizes
   ErrorBanner.tsx          Typed errors with rate-limit countdown
-  DebugLog.tsx             Collapsible API call log (latency + copy-all)
 
 hooks/
   useAudioRecorder.ts      MediaRecorder stop/restart every N seconds
@@ -178,6 +177,3 @@ The **Export** button downloads a complete JSON file:
 - Full chat history: display content, full API prompt for suggestion clicks, suggestion type, timestamps
 - Session metadata: duration, model names
 
-## API log
-
-A collapsible **Logs** button (bottom-right) shows every API call with status, latency, and detail. **Copy all** exports the log as plain text.

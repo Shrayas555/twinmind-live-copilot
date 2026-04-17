@@ -82,10 +82,8 @@ export default function Home() {
   const generateSuggestions = useCallback(async (force = false) => { // eslint-disable-line react-hooks/exhaustive-deps
     const isForced = force || forceNextSuggestionRef.current;
     forceNextSuggestionRef.current = false;
-    console.log("[sugg] called isForced=%s inFlight=%s", isForced, isSuggestionsInFlightRef.current);
     if (isSuggestionsInFlightRef.current) {
       suggestionsPendingRef.current = true;
-      console.log("[sugg] blocked: in-flight");
       return;
     }
 
@@ -93,7 +91,6 @@ export default function Home() {
     if (cooldownRemaining > 0) {
       suggestionsPendingRef.current = true;
       if (isForced) forceNextSuggestionRef.current = true;
-      console.log("[sugg] blocked: cooldown %dms remaining", Math.round(cooldownRemaining));
       if (!suggestionsCooldownTimerRef.current) {
         suggestionsCooldownTimerRef.current = setTimeout(() => {
           suggestionsCooldownTimerRef.current = null;
@@ -108,20 +105,17 @@ export default function Home() {
 
     if (isChatStreamingRef.current) {
       suggestionsPendingRef.current = true;
-      console.log("[sugg] blocked: chat streaming");
       return;
     }
 
     const s = settingsRef.current;
     const transcript = transcriptRef.current.map((c) => c.text).join(" ");
 
-    if (!transcript.trim() || !s.groqApiKey) { console.log("[sugg] blocked: no transcript or key"); return; }
+    if (!transcript.trim() || !s.groqApiKey) return;
 
     if (!isForced) {
       const lastBatch = suggestionBatchesRef.current[suggestionBatchesRef.current.length - 1];
-      const newChars = lastBatch ? transcript.length - lastBatch.transcriptLength : 999;
-      console.log("[sugg] new-speech check: %d new chars (need 150)", newChars);
-      if (lastBatch && newChars < 150) { console.log("[sugg] blocked: not enough new speech"); return; }
+      if (lastBatch && transcript.length - lastBatch.transcriptLength < 150) return;
     }
 
     isSuggestionsInFlightRef.current = true;
@@ -253,7 +247,6 @@ export default function Home() {
       // transcriptRef synchronously. generateSuggestions reads transcriptRef directly.
       transcriptRef.current = [...transcriptRef.current, chunk];
       setTranscriptChunks(transcriptRef.current);
-      console.log("[transcribe] chunk landed, forceFlag=%s", forceNextSuggestionRef.current);
       generateSuggestions();
     },
     [generateSuggestions]
@@ -273,7 +266,7 @@ export default function Home() {
     onError: (msg: string) => {
       setError(msg);
     },
-    onChunkSuccess: (durationMs: number) => {
+    onChunkSuccess: () => {
     },
   });
 
@@ -633,7 +626,6 @@ export default function Home() {
             onRefresh={() => {
               setIsSuggestionsQueued(true);
               if (isRecording) {
-                console.log("[reload] pressed while recording — setting force flag + flushChunk");
                 forceNextSuggestionRef.current = true;
                 flushChunk();
               } else {

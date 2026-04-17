@@ -48,18 +48,6 @@ export interface AppSettings {
   autoRefreshInterval: number;
 }
 
-export type LogType = "transcribe" | "suggestions" | "chat";
-export type LogStatus = "success" | "error";
-
-export interface LogEntry {
-  id: string;
-  timestamp: number;
-  type: LogType;
-  status: LogStatus;
-  durationMs: number;
-  detail: string;
-}
-
 export interface SessionExport {
   exportedAt: string;
   session: {
