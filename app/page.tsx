@@ -28,6 +28,7 @@ export default function Home() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
   const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(false);
+  const [isSuggestionsQueued, setIsSuggestionsQueued] = useState(false);
   const [isChatStreaming, setIsChatStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   /** Seconds until the current audio chunk ends (~next transcript append). */
@@ -123,6 +124,7 @@ export default function Home() {
     if (!transcript.trim() || !s.groqApiKey) return;
 
     isSuggestionsInFlightRef.current = true;
+    setIsSuggestionsQueued(false);
     setIsSuggestionsLoading(true);
     setError(null);
 
@@ -624,15 +626,13 @@ export default function Home() {
           <SuggestionsPanel
             batches={suggestionBatches}
             isLoading={isSuggestionsLoading}
+            isQueued={isSuggestionsQueued}
             isTranscribing={isTranscribing}
             isRecording={isRecording}
             nextChunkIn={nextChunkIn}
             onRefresh={() => {
+              setIsSuggestionsQueued(true);
               if (isRecording) {
-                // flushChunk() transcribes the partial audio; handleChunkTranscribed
-                // will fire generateSuggestions() automatically when it lands.
-                // Calling generateSuggestions() here too caused a double Groq call
-                // which congested the second request into the 7s timeout.
                 flushChunk();
               } else {
                 generateSuggestions();

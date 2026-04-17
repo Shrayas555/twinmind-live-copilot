@@ -7,6 +7,8 @@ import { formatTimestamp } from "@/lib/defaults";
 interface Props {
   batches: SuggestionBatch[];
   isLoading: boolean;
+  /** Reload was pressed but still waiting on transcription or cooldown. */
+  isQueued: boolean;
   isTranscribing: boolean;
   isRecording: boolean;
   /** Seconds until current audio segment ends (~next transcript + suggestion refresh). */
@@ -130,6 +132,7 @@ function SuggestionCard({
 export default function SuggestionsPanel({
   batches,
   isLoading,
+  isQueued,
   isTranscribing,
   isRecording,
   nextChunkIn,
@@ -137,9 +140,8 @@ export default function SuggestionsPanel({
   onSuggestionClick,
   hasTranscript,
 }: Props) {
-  // Busy = transcribing audio chunk OR generating suggestions
-  const isBusy = isTranscribing || isLoading;
-  const busyLabel = isTranscribing ? "Transcribing…" : "Generating…";
+  const isBusy = isTranscribing || isLoading || isQueued;
+  const busyLabel = isTranscribing ? "Transcribing…" : isLoading ? "Generating…" : "Preparing…";
 
   return (
     <div className="flex flex-col h-full min-h-0">
