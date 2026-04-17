@@ -532,9 +532,12 @@ export default function Home() {
             isRecording={isRecording}
             nextChunkIn={nextChunkIn}
             onRefresh={() => {
-              // Recording: flush partial audio → transcribe → append chunk → suggestions.
-              // Idle: regenerate suggestions from the transcript already on screen.
               if (isRecording) {
+                // Generate from current transcript immediately (~1.7s) so the user
+                // sees a fresh batch without waiting for transcription to finish.
+                // flushChunk() transcribes the partial audio in parallel — when it
+                // lands, the pending-ref fires a follow-up batch with the new speech.
+                if (transcriptChunks.length > 0) generateSuggestions();
                 flushChunk();
               } else {
                 generateSuggestions();
