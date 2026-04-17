@@ -6,7 +6,7 @@ import type { AppSettings } from "@/lib/types";
 
 // Bump this string whenever default prompts change.
 // On mismatch, prompts reset to new defaults while preserving the user's API key.
-const PROMPT_VERSION = "v4";
+const PROMPT_VERSION = "v5";
 const PROMPT_VERSION_KEY = "twinmind_prompt_version";
 
 export function useSettings() {

@@ -58,7 +58,9 @@ Universal rules:
 detailPrompt — one targeted sentence for drilling into when clicked. Give an angle, not just a topic:
   ✗ "Explain this topic in more detail"
   ✓ "Expand on why their 3-month onboarding concern is valid; give 3 concrete ways to get below 11 days"
-  Reference exact names, numbers, or quotes from the transcript. The detailPrompt alone should tell an expert exactly what angle to take.`;
+  Reference exact names, numbers, or quotes from the transcript. The detailPrompt alone should tell an expert exactly what angle to take.
+
+OUTPUT RULE — this overrides everything above: your entire response must be the JSON object and nothing else. No reasoning, no commentary, no preamble, no explanation. The first character you output must be { and the last must be }.`;
 
 // ─── Suggestions: user message template ──────────────────────────────────────
 export const DEFAULT_SUGGESTIONS_USER_TEMPLATE = `FULL RECENT CONTEXT:
@@ -67,12 +69,8 @@ export const DEFAULT_SUGGESTIONS_USER_TEMPLATE = `FULL RECENT CONTEXT:
 ▶ LAST EXCHANGE — triage starts HERE:
 {lastExchange}
 
-{previousSuggestionsBlock}Generate 3 suggestions based on what was JUST said. Each MUST cover a completely different angle — different type, different topic, different framing. Return ONLY the JSON object below, starting with "{":
-{"suggestions": [
-  {"type": "QUESTION|TALKING_POINT|ANSWER|FACT_CHECK|CLARIFICATION", "preview": "≤130 chars, standalone value", "detailPrompt": "One targeted sentence referencing exact names/numbers/quotes from the transcript"},
-  {"type": "...", "preview": "...", "detailPrompt": "..."},
-  {"type": "...", "preview": "...", "detailPrompt": "..."}
-]}`;
+{previousSuggestionsBlock}Generate 3 suggestions — each a different type, angle, and topic. Output ONLY the JSON below. Begin your response with { on the very first character:
+{"suggestions":[{"type":"QUESTION|TALKING_POINT|ANSWER|FACT_CHECK|CLARIFICATION","preview":"≤130 chars standalone value","detailPrompt":"one targeted sentence with exact names/numbers from transcript"},{"type":"...","preview":"...","detailPrompt":"..."},{"type":"...","preview":"...","detailPrompt":"..."}]}`;
 
 // Combined export for Settings display / backward compatibility
 export const DEFAULT_SUGGESTIONS_PROMPT =

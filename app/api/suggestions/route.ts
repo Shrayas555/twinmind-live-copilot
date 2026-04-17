@@ -29,9 +29,10 @@ const MIN_TRANSCRIPT_WORDS = 5;
 
 function buildPreviousSuggestionsBlock(previousPreviews: string[]): string {
   if (!previousPreviews.length) return "";
-  // Plain numbered list — no emoji, no bullet symbols that might bleed into model output style
-  const items = previousPreviews.map((p, i) => `${i + 1}. ${p}`).join("\n");
-  return `ALREADY SHOWN (do NOT repeat or rephrase any of these):\n${items}\n\n`;
+  // Inline format — NOT a numbered list. Numbered lists bleed into the model's output
+  // style and cause it to write reasoning prose instead of JSON.
+  const quoted = previousPreviews.map((p) => `"${p}"`).join(" · ");
+  return `SKIP (already shown to user — do not repeat): ${quoted}\n\n`;
 }
 
 /**
@@ -146,10 +147,12 @@ export async function POST(req: NextRequest) {
     ];
     const llmModel = model || GROQ_SUGGESTIONS_MODEL;
 
+    // Hard-timeout wrapper using Promise.race — AbortController alone doesn't reliably
+    // cancel mid-stream on the Groq SDK; race guarantees the caller gets "" within timeoutMs.
     async function runStream(temperature: number, timeoutMs: number): Promise<string> {
       const abort = new AbortController();
-      const timer = setTimeout(() => abort.abort(), timeoutMs);
-      try {
+
+      const exec = async (): Promise<string> => {
         // stream:true avoids Groq's json_validate_failed (400) on openai/gpt-oss-120b
         const stream = await groq.chat.completions.create(
           { model: llmModel, messages: llmMessages, temperature, max_tokens: 600, stream: true },
@@ -161,30 +164,50 @@ export async function POST(req: NextRequest) {
           raw += chunk.choices[0]?.delta?.content ?? "";
         }
         return raw;
+      };
+
+      const timeout = new Promise<string>((resolve) =>
+        setTimeout(() => { abort.abort(); resolve(""); }, timeoutMs)
+      );
+
+      try {
+        return await Promise.race([exec(), timeout]);
       } catch (e) {
         if (abort.signal.aborted) return "";
         throw e;
-      } finally {
-        clearTimeout(timer);
       }
     }
 
-    const t0 = Date.now();
+    // Fallback: when the primary model outputs non-JSON, use llama-3.3-70b-versatile with
+    // response_format: json_object — guaranteed valid JSON, much faster at this task.
+    async function runFallback(): Promise<string> {
+      const resp = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: llmMessages,
+        temperature: 0.3,
+        max_tokens: 600,
+        stream: false,
+        response_format: { type: "json_object" },
+      });
+      return resp.choices[0]?.message?.content ?? "";
+    }
+
     let rawContent = await runStream(0.65, 7000);
-    const elapsed = Date.now() - t0;
     let parsed = extractSuggestions(rawContent);
 
-    // Auto-retry once at lower temperature — only when first attempt failed fast (<5s),
-    // meaning bad JSON output rather than server congestion. If the first attempt was slow
-    // and timed out, a retry would just double the wait time.
-    if (!parsed.length && elapsed < 5000) {
-      console.warn("[suggestions] First attempt parse failed, retrying at temperature 0.3");
-      rawContent = await runStream(0.3, 5000);
-      parsed = extractSuggestions(rawContent);
+    // On parse failure fall back to llama — same-model retries just repeat the same bad output.
+    if (!parsed.length) {
+      console.warn("[suggestions] Primary model parse failed, falling back to llama-3.3-70b-versatile");
+      try {
+        rawContent = await runFallback();
+        parsed = extractSuggestions(rawContent);
+      } catch (fallbackErr) {
+        console.error("[suggestions] Fallback also failed:", fallbackErr);
+      }
     }
 
     if (!parsed.length) {
-      console.error("[suggestions] JSON extraction failed after retry. Raw output:", rawContent.slice(0, 400));
+      console.error("[suggestions] JSON extraction failed after fallback. Raw output:", rawContent.slice(0, 400));
       return NextResponse.json({ suggestions: [], parseError: true });
     }
 
