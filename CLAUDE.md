@@ -1,125 +1,132 @@
-# TwinMind Live Suggestions — Project Guide
+# TwinMind Live — Project Guide for Claude
 
 ## What this project is
 
-A take-home assignment for a Full Stack / Prompt Engineer role at TwinMind (Menlo Park, CA).
-TwinMind is an always-on AI meeting copilot. This app replicates and improves their core feature:
-surfacing the right suggestion at the right time during a live conversation.
-
-The app is evaluated on:
-1. **Prompt engineering quality** — useful, well-timed, contextually varied suggestions
-2. **Chat answer quality** — detailed answers when a suggestion is clicked
-3. **Full-stack engineering** — audio, API routes, streaming, error handling
-4. **Code quality** — clean structure, readable, no dead code
-5. **Latency** — first suggestion render speed, first chat token speed
+A real-time AI meeting copilot: transcribes mic audio in 30-second chunks, surfaces 3 contextaware suggestions in the middle column, and streams detailed answers on demand in a chat panel.
 
 ## Layout (3-column, dark theme)
 
 | Column | Component | Purpose |
 |--------|-----------|---------|
-| Left (1/3) | `TranscriptPanel` | Mic button, transcript chunks, auto-scroll |
-| Middle (1/3) | `SuggestionsPanel` | Batched suggestion cards, auto-refresh, reload button |
-| Right (1/3) | `ChatPanel` | Streaming chat, suggestion-click answers |
+| Left (1/3) | `TranscriptPanel` | Mic button, transcript chunks, word count, auto-scroll |
+| Middle (1/3) | `SuggestionsPanel` | Batched suggestion cards, reload button, type legend |
+| Right (1/3) | `ChatPanel` | Streaming chat, Markdown renderer, suggestion-click answers |
 
-Header: Export button + Settings gear icon.
+Header: Export button + Settings gear icon + DebugLog (bottom-right, collapsible).
 
 ## Tech stack
 
 - **Next.js 16** App Router, TypeScript, Tailwind CSS
 - **Groq Whisper Large V3** — audio transcription
-- **Groq `openai/gpt-oss-120b`** — suggestions + chat (required by assignment spec; fallback: `llama-3.3-70b-versatile`)
-- **Vercel** — deployment
-- **GitHub** — `Shrayas555/twinmind-live-copilot` (public repo)
+- **Groq `openai/gpt-oss-120b`** — suggestions + chat
+- **Vercel** — deployment (no env vars needed — key is user-supplied at runtime)
+- **GitHub** — `Shrayas555/twinmind-live-copilot`
 
 ## File structure
 
 ```
-app/page.tsx                    Main orchestrator — all state, timers, event wiring
-app/api/transcribe/route.ts     POST: proxies audio blob → Groq Whisper, returns { text }
-app/api/suggestions/route.ts    POST: transcript + prompt → Groq LLM, returns { suggestions[] }
+app/page.tsx                    Orchestrator — all state, timers, event wiring
+app/api/transcribe/route.ts     POST: audio blob → Groq Whisper → { text }
+app/api/suggestions/route.ts    POST: transcript + prompt → Groq LLM → { suggestions[] }
 app/api/chat/route.ts           POST: messages → Groq streaming SSE
 
-components/TranscriptPanel.tsx  Mic button (start/stop), chunk list, auto-scroll
-components/SuggestionsPanel.tsx Batched cards with type badges, collapsible, refresh button
-components/ChatPanel.tsx        Streaming chat, minimal Markdown renderer (bold + bullets)
+components/TranscriptPanel.tsx  Mic button, chunk list, word count footer, auto-scroll
+components/SuggestionsPanel.tsx Batched cards with type badges, type legend empty state
+components/ChatPanel.tsx        Streaming chat + Markdown renderer (headers, bold, code, lists, hr)
 components/SettingsModal.tsx    4 tabs: API Key · Models · Prompts · Context & Timing
+components/ErrorBanner.tsx      Typed error display with rate-limit countdown
+components/DebugLog.tsx         Collapsible API call log (latency + copy-all)
 
-hooks/useAudioRecorder.ts       MediaRecorder stop/restart every N seconds, transcribes each chunk
-hooks/useSettings.ts            localStorage-persisted AppSettings with typed defaults
+hooks/useAudioRecorder.ts       MediaRecorder stop/restart every N seconds
+hooks/useSettings.ts            localStorage-persisted AppSettings, PROMPT_VERSION migration
 
-lib/types.ts                    All shared TypeScript types
-lib/prompts.ts                  Default engineered prompts (suggestions, detailed answer, chat)
-lib/defaults.ts                 DEFAULT_SETTINGS, getContextWindow, formatTimestamp, genId
+lib/types.ts                    All shared TypeScript interfaces
+lib/prompts.ts                  Engineered default prompts (suggestions, detailed answer, chat)
+lib/defaults.ts                 DEFAULT_SETTINGS, getSuggestionsContext, getContextWindow
+lib/groqError.ts                Groq error → user-readable message (status codes + fallback)
 ```
 
 ## How audio chunking works
 
-`useAudioRecorder` stops MediaRecorder every `chunkDuration` seconds, sends the complete
-`audio/webm` blob to `/api/transcribe`, then immediately restarts on the same stream.
-- Same stream stays alive so there's no mic permission gap
-- Each blob is a complete audio file (Whisper needs this)
-- Blobs < 1 KB are skipped (silence)
+`useAudioRecorder` stops MediaRecorder every `chunkDuration` seconds (default 30s, first chunk 15s),
+sends the complete `audio/webm` blob to `/api/transcribe`, then immediately restarts on the same stream.
+- First chunk capped at 15s so first suggestions appear quickly
+- Same stream stays alive — no mic permission gap
+- Blobs < 1 KB are skipped (silence / near-empty)
 - Last partial chunk is captured when user stops recording
 
 ## How suggestions work
 
-- Trigger: every time a new transcript chunk arrives + independent 30s timer while recording
-- Context: two-tier — opening 60 words (meeting type) + recent 600 words (recency signal) via `getSuggestionsContext()`
-- Last Exchange: `getLastExchange()` extracts last 4 sentences (or 80 words if Whisper gave no punctuation) and sends it as a separate spotlight section so the model sees what was JUST said
-- Output: exactly 3 suggestions, each with `type`, `preview` (≤130 chars, standalone value), `detailPrompt`
-- Types: `QUESTION` `TALKING_POINT` `ANSWER` `FACT_CHECK` `CLARIFICATION`
-- Slot 1 is always ANSWER if the last exchange contains a question — hard rule in the system prompt
-- Anti-repetition: last 2 batches' previews passed as `previousPreviews` to prevent repeating angles
-- JSON enforced via `response_format: { type: "json_object" }` on Groq
-- API route handles both `[]` and `{ suggestions: [] }` response shapes
+**Trigger:** every time a new transcript chunk arrives via `handleChunkTranscribed`.
+
+**Context strategy — two-tier window:**
+- `getSuggestionsContext()` sends opening 60 words (meeting type signal) + recent 600 words (recency)
+- The latest `TranscriptChunk.text` is sent as `lastExchange` — it IS what was just said (15–30s of speech), no sentence parsing needed. `getLastExchange()` is only the fallback when no chunks exist yet.
+
+**Output:** exactly 3 suggestions with `type`, `preview` (≤130 chars, standalone value), `detailPrompt`.
+
+**Types:** `QUESTION` · `TALKING_POINT` · `ANSWER` · `FACT_CHECK` · `CLARIFICATION`
+
+**Decision rules (enforced in system prompt):**
+- Slot 1 = ANSWER if last exchange ends with a question — hard rule, non-negotiable
+- FACT_CHECK when specific numbers/statistics appear
+- CLARIFICATION when jargon/acronyms appear
+- Slot 3 = "outsider angle" — what a domain expert who just walked in would notice
+
+**JSON reliability:** uses `stream: true` (not `response_format: json_object`) — Groq's strict
+JSON validation fails intermittently on `openai/gpt-oss-120b`. We accumulate tokens and parse
+with a robust `indexOf/lastIndexOf` extractor. `OUTPUT RULE` at the end of the system prompt
+enforces that the first character must be `{`.
+
+**Anti-repetition:** last 3 batches' previews sent as `previousPreviews` (inline quoted format —
+NOT a numbered list, which bleeds into model output style).
+
+**Concurrency:** `isSuggestionsInFlightRef` prevents concurrent calls. If a new chunk arrives
+mid-flight, `suggestionsPendingRef` queues a follow-up via `queueMicrotask`.
+
+**Timeout:** `runStream` uses `Promise.race` with a 7s timeout. Retry fires at temp=0.3 only
+when first attempt fails fast (<5s) — a slow timeout does not double-wait.
 
 ## How suggestion clicks work
 
-Clicking a card uses the **detailed answer prompt** (separate from suggestions prompt).
-- Display: shows suggestion preview as the user turn in chat
-- API call: sends the full detailed prompt as the actual user message content
-- Context: up to 3000 words of transcript
-- Each type gets a different answer structure (ANSWER → direct answer, FACT_CHECK → verdict + correct figure, etc.)
+- Display text in chat: `suggestion.preview` (short, what the user sees)
+- Actual API content: the full `detailedAnswerPrompt` expanded with transcript + type + preview + detailPrompt
+- Previous chat turns use display content (not apiContent) to prevent token explosion
+- `transcriptAlreadyInMessage=true` skips re-embedding the transcript in the system prompt
 
 ## How chat streaming works
 
-`/api/chat` returns Server-Sent Events. The client reads the stream and appends `delta` tokens
-to `streamingContent` state in real time. When `[DONE]` arrives, the complete message is
-committed to `chatMessages` state.
+`/api/chat` returns Server-Sent Events. Client reads stream, appends `delta` tokens to
+`streamingContent` state in real time. `[DONE]` commits the full message to `chatMessages`.
 
 ## Settings (all configurable at runtime)
 
 | Setting | Default | Purpose |
 |---------|---------|---------|
-| groqApiKey | "" | Stored in localStorage, passed in request bodies |
-| transcriptionModel | `whisper-large-v3` | Groq Whisper model |
-| suggestionsModel | `openai/gpt-oss-120b` | LLM for suggestions (assignment-required model) |
-| chatModel | same | LLM for chat |
-| suggestionsSystemPrompt | see lib/prompts.ts | Full prompt with `{transcript}` placeholder |
-| detailedAnswerPrompt | see lib/prompts.ts | `{transcript}` `{type}` `{preview}` `{detailPrompt}` |
-| chatSystemPrompt | see lib/prompts.ts | `{transcript}` placeholder |
-| suggestionsContextWords | 600 | Words of transcript sent for suggestions |
-| detailedAnswerContextWords | 3000 | Words sent for detailed answers / chat |
-| autoRefreshInterval | 30 | Seconds between auto-refresh + audio chunk size |
+| `groqApiKey` | `""` | Stored in localStorage, sent in request bodies (never browser→Groq directly) |
+| `transcriptionModel` | `whisper-large-v3` | Groq Whisper model |
+| `suggestionsModel` | `openai/gpt-oss-120b` | LLM for suggestions |
+| `chatModel` | `openai/gpt-oss-120b` | LLM for chat |
+| `suggestionsPrompt` | see `lib/prompts.ts` | Combined system + `---USER TEMPLATE---` + user template |
+| `detailedAnswerPrompt` | see `lib/prompts.ts` | Variables: `{transcript}` `{type}` `{preview}` `{detailPrompt}` |
+| `chatSystemPrompt` | see `lib/prompts.ts` | Variable: `{transcript}` |
+| `suggestionsContextWords` | `600` | Recent words sent for suggestions |
+| `detailedAnswerContextWords` | `3000` | Words sent for detailed answers / chat |
+| `autoRefreshInterval` | `30` | Chunk duration in seconds (also controls auto-refresh cadence) |
 
-## Key design decisions to defend in interview
+## Key design decisions
 
-1. **600-word context for suggestions** — recency bias; last ~3 min of speech is what's actionable now
-2. **Separate prompts for suggestions vs detailed answers** — different context size, different output format
-3. **Stop/restart chunking** — gives Whisper complete audio files; simpler and more reliable than timeslice
-4. **API key in localStorage → request body** — user pastes their own key; routes call Groq server-side so key never goes browser→Groq directly
-5. **Type heuristics in prompt** — model picks the mix; ANSWER prioritized when question just asked, FACT_CHECK when numbers appear
-6. **Preview must deliver standalone value** — this is the hardest prompt constraint; generic previews are worthless
+1. **600-word context for suggestions** — recency bias; last ~3 min of speech is actionable now
+2. **Separate prompts for suggestions vs detailed answers** — different context size, format, goal
+3. **Latest Whisper chunk as lastExchange** — no sentence parsing errors across chunk joins
+4. **Stop/restart chunking over timeslice** — Whisper needs complete audio files; simpler + reliable
+5. **stream:true over response_format:json_object** — avoids Groq's intermittent json_validate_failed
+6. **Preview must deliver standalone value** — enforced by prompt quality bar with good/bad examples
+7. **Slot 3 = outsider angle** — hard-coded asymmetry produces more varied batches than 3 equal slots
 
 ## Security
 
 - No hardcoded API keys anywhere
-- .gitignore covers all .env* files
-- API key only in localStorage and request bodies (server-proxied)
+- `.gitignore` covers all `.env*` files
+- API key stored in localStorage only; routed through Next.js API routes server-side
 - No user data persisted on any server
-
-## Deployment
-
-- GitHub: `https://github.com/Shrayas555/twinmind-live-copilot` (public)
-- Deploy target: Vercel (`vercel --prod`)
-- No environment variables needed on Vercel (key is user-supplied at runtime)

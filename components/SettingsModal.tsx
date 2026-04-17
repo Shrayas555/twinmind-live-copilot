@@ -228,7 +228,7 @@ function SuggestionsPromptTab({
       </Field>
       <Field
         label="Suggestions — User Message Template"
-        hint="Filled at runtime. Variables: {transcript}, {lastExchange}, {previousSuggestionsBlock}."
+        hint="Filled at runtime. Variables: {transcript}, {lastExchange}."
       >
         <PromptArea value={userPart} onChange={updateUser} />
       </Field>

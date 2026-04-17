@@ -69,7 +69,7 @@ export const DEFAULT_SUGGESTIONS_USER_TEMPLATE = `FULL RECENT CONTEXT:
 ▶ LAST EXCHANGE — triage starts HERE:
 {lastExchange}
 
-{previousSuggestionsBlock}Generate 3 suggestions — each a different type, angle, and topic. Output ONLY the JSON below. Begin your response with { on the very first character:
+Generate 3 suggestions — each a different type, angle, and topic. Output ONLY the JSON below. Begin your response with { on the very first character:
 {"suggestions":[{"type":"QUESTION|TALKING_POINT|ANSWER|FACT_CHECK|CLARIFICATION","preview":"≤130 chars standalone value","detailPrompt":"one targeted sentence with exact names/numbers from transcript"},{"type":"...","preview":"...","detailPrompt":"..."},{"type":"...","preview":"...","detailPrompt":"..."}]}`;
 
 // Combined export for Settings display / backward compatibility

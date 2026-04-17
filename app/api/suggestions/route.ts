@@ -136,13 +136,19 @@ export async function POST(req: NextRequest) {
     const previousSuggestionsBlock = buildPreviousSuggestionsBlock(previousPreviews ?? []);
     const { system, userTemplate } = splitPrompt(systemPrompt ?? DEFAULT_SUGGESTIONS_PROMPT);
 
+    // Append SKIP constraint to the system prompt — NOT the user message.
+    // In the user message it bleeds into the model's output style and causes JSON parse failures.
+    const systemWithContext = previousSuggestionsBlock
+      ? system + "\n\n" + previousSuggestionsBlock.trim()
+      : system;
+
     const userMessage = (userTemplate || DEFAULT_SUGGESTIONS_USER_TEMPLATE)
       .replace("{transcript}", transcript)
       .replace("{lastExchange}", lastExchange ?? transcript.split(/\s+/).slice(-60).join(" "))
-      .replace("{previousSuggestionsBlock}", previousSuggestionsBlock);
+      .replace("{previousSuggestionsBlock}", "");
 
     const llmMessages: { role: "system" | "user"; content: string }[] = [
-      { role: "system", content: system },
+      { role: "system", content: systemWithContext },
       { role: "user", content: userMessage },
     ];
     const llmModel = model || GROQ_SUGGESTIONS_MODEL;

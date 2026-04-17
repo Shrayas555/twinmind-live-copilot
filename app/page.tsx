@@ -92,8 +92,8 @@ export default function Home() {
     const latestChunk = transcriptRef.current[transcriptRef.current.length - 1];
     const lastExchange = latestChunk?.text || getLastExchange(transcript, 4);
 
-    // Last 3 batches (max 9 previews) — enough anti-repetition without a huge blocklist.
-    const recentBatches = suggestionBatchesRef.current.slice(-3);
+    // Last batch only (max 3 previews) — more previews in the user message causes parse failures.
+    const recentBatches = suggestionBatchesRef.current.slice(-1);
     const previousPreviews = recentBatches.flatMap((b) =>
       b.suggestions.map((s) => s.preview).filter(Boolean)
     );
