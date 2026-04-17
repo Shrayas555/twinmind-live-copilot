@@ -146,31 +146,40 @@ export async function POST(req: NextRequest) {
     ];
     const llmModel = model || GROQ_SUGGESTIONS_MODEL;
 
-    async function runStream(temperature: number): Promise<string> {
-      // stream:true avoids Groq's json_validate_failed (400) on openai/gpt-oss-120b
-      const stream = await groq.chat.completions.create({
-        model: llmModel,
-        messages: llmMessages,
-        temperature,
-        max_tokens: 900,
-        stream: true,
-      });
-      let raw = "";
-      for await (const chunk of stream) {
-        raw += chunk.choices[0]?.delta?.content ?? "";
+    async function runStream(temperature: number, timeoutMs: number): Promise<string> {
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), timeoutMs);
+      try {
+        // stream:true avoids Groq's json_validate_failed (400) on openai/gpt-oss-120b
+        const stream = await groq.chat.completions.create(
+          { model: llmModel, messages: llmMessages, temperature, max_tokens: 600, stream: true },
+          { signal: abort.signal }
+        );
+        let raw = "";
+        for await (const chunk of stream) {
+          if (abort.signal.aborted) break;
+          raw += chunk.choices[0]?.delta?.content ?? "";
+        }
+        return raw;
+      } catch (e) {
+        if (abort.signal.aborted) return "";
+        throw e;
+      } finally {
+        clearTimeout(timer);
       }
-      return raw;
     }
 
-    let rawContent = await runStream(0.65);
+    const t0 = Date.now();
+    let rawContent = await runStream(0.65, 7000);
+    const elapsed = Date.now() - t0;
     let parsed = extractSuggestions(rawContent);
 
-    // Auto-retry once at lower temperature — openai/gpt-oss-120b occasionally outputs
-    // explanatory text before/after the JSON, especially on longer prompts.
-    // Lower temperature forces more deterministic, format-compliant output.
-    if (!parsed.length) {
+    // Auto-retry once at lower temperature — only when first attempt failed fast (<5s),
+    // meaning bad JSON output rather than server congestion. If the first attempt was slow
+    // and timed out, a retry would just double the wait time.
+    if (!parsed.length && elapsed < 5000) {
       console.warn("[suggestions] First attempt parse failed, retrying at temperature 0.3");
-      rawContent = await runStream(0.3);
+      rawContent = await runStream(0.3, 5000);
       parsed = extractSuggestions(rawContent);
     }
 
