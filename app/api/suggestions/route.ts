@@ -81,8 +81,23 @@ function extractSuggestions(text: string): SuggestionRaw[] {
     if (Array.isArray(outer.data)) return outer.data;
   } catch { /* fall through */ }
 
-  // 2. Find outermost JSON object via indexOf/lastIndexOf — handles ] or } in string values.
-  //    Try object before array because the prompt instructs {"suggestions": [...]} format.
+  // 2. Target "suggestions" key directly — handles the case where the model outputs analysis
+  //    text before the JSON (e.g. "{...reasoning...} {"suggestions":[...]}").
+  //    firstBrace + lastBrace fails here because it picks up the preamble { as the start,
+  //    producing an invalid combined slice. lastIndexOf finds the ACTUAL suggestions object.
+  const sugKey = cleaned.lastIndexOf('"suggestions"');
+  if (sugKey !== -1) {
+    const braceStart = cleaned.lastIndexOf("{", sugKey);
+    const braceEnd = cleaned.lastIndexOf("}");
+    if (braceStart !== -1 && braceEnd > braceStart) {
+      try {
+        const obj = JSON.parse(cleaned.slice(braceStart, braceEnd + 1));
+        if (Array.isArray(obj.suggestions)) return obj.suggestions;
+      } catch { /* fall through */ }
+    }
+  }
+
+  // 3. Find outermost JSON object via indexOf/lastIndexOf (generic fallback)
   const firstBrace = cleaned.indexOf("{");
   const lastBrace = cleaned.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace > firstBrace) {
@@ -94,7 +109,7 @@ function extractSuggestions(text: string): SuggestionRaw[] {
     } catch { /* fall through */ }
   }
 
-  // 3. Find outermost JSON array via indexOf/lastIndexOf (fallback for bare arrays)
+  // 4. Find outermost JSON array via indexOf/lastIndexOf (fallback for bare arrays)
   const firstBracket = cleaned.indexOf("[");
   const lastBracket = cleaned.lastIndexOf("]");
   if (firstBracket !== -1 && lastBracket > firstBracket) {
