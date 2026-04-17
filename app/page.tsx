@@ -59,6 +59,7 @@ export default function Home() {
   // refresh is lost forever and the UI stays stuck on one batch.
   const isSuggestionsInFlightRef = useRef(false);
   const suggestionsPendingRef = useRef(false);
+  const forceNextSuggestionRef = useRef(false);
   // Minimum gap between suggestion calls — prevents Groq congestion when rapid
   // reloads or back-to-back transcription events queue calls immediately.
   // After failures, backoff extends so Groq can recover before we retry.
@@ -79,6 +80,8 @@ export default function Home() {
   const generateSuggestionsRef = useRef<(() => void) | null>(null);
 
   const generateSuggestions = useCallback(async (force = false) => { // eslint-disable-line react-hooks/exhaustive-deps
+    const isForced = force || forceNextSuggestionRef.current;
+    forceNextSuggestionRef.current = false;
     if (isSuggestionsInFlightRef.current) {
       suggestionsPendingRef.current = true;
       return;
@@ -116,7 +119,7 @@ export default function Home() {
     // Skip if transcript hasn't grown enough since the last batch — prevents redundant
     // calls when chunks arrive faster than speech (silence chunks, rapid reloads, etc.).
     // ~150 chars ≈ 30 words. Bypassed when the user explicitly hits reload (force=true).
-    if (!force) {
+    if (!isForced) {
       const lastBatch = suggestionBatchesRef.current[suggestionBatchesRef.current.length - 1];
       if (lastBatch && transcript.length - lastBatch.transcriptLength < 150) return;
     }
@@ -629,9 +632,10 @@ export default function Home() {
             onRefresh={() => {
               setIsSuggestionsQueued(true);
               if (isRecording) {
+                forceNextSuggestionRef.current = true;
                 flushChunk();
               } else {
-                generateSuggestions(true); // force=true: bypass new-speech check
+                generateSuggestions(true);
               }
             }}
             onSuggestionClick={handleSuggestionClick}
