@@ -70,8 +70,10 @@ export default function Home() {
   const suggestionsPendingRef = useRef(false);
   // Minimum gap between suggestion calls — prevents Groq congestion when rapid
   // reloads or back-to-back transcription events queue calls immediately.
+  // After failures, backoff extends so Groq can recover before we retry.
   const lastSuggestionEndTimeRef = useRef(0);
   const suggestionsCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const consecutiveSuggestionFailuresRef = useRef(0);
   const MIN_SUGGESTION_COOLDOWN_MS = 5000;
 
   const generateSuggestions = useCallback(async () => { // eslint-disable-line react-hooks/exhaustive-deps
@@ -121,6 +123,9 @@ export default function Home() {
     );
 
     const t0 = Date.now();
+    // Extra delay to add after this call finishes — non-zero after failures so Groq recovers.
+    let failureBackoffMs = 0;
+
     try {
       const res = await fetch("/api/suggestions", {
         method: "POST",
@@ -140,6 +145,8 @@ export default function Home() {
         const msg = err.error ?? "Failed to generate suggestions";
         addLog({ type: "suggestions", status: "error", durationMs: Date.now() - t0, detail: msg });
         setError(msg);
+        consecutiveSuggestionFailuresRef.current++;
+        failureBackoffMs = Math.min(15000 * consecutiveSuggestionFailuresRef.current, 60000);
         return;
       }
 
@@ -156,9 +163,13 @@ export default function Home() {
           ? `JSON parse error. Model output: ${data.rawSample}`
           : "JSON parse error — model returned unparseable output.";
         addLog({ type: "suggestions", status: "error", durationMs: Date.now() - t0, detail });
+        consecutiveSuggestionFailuresRef.current++;
+        failureBackoffMs = Math.min(15000 * consecutiveSuggestionFailuresRef.current, 60000);
         return;
       }
+
       if (data.suggestions?.length > 0) {
+        consecutiveSuggestionFailuresRef.current = 0; // reset on success
         const batch: SuggestionBatch = {
           id: genId(),
           suggestions: data.suggestions,
@@ -177,14 +188,18 @@ export default function Home() {
       const msg = e instanceof Error ? e.message : "Network error — check your connection.";
       addLog({ type: "suggestions", status: "error", durationMs: Date.now() - t0, detail: msg });
       setError(msg);
+      consecutiveSuggestionFailuresRef.current++;
+      failureBackoffMs = Math.min(15000 * consecutiveSuggestionFailuresRef.current, 60000);
     } finally {
       isSuggestionsInFlightRef.current = false;
-      lastSuggestionEndTimeRef.current = Date.now();
+      // Push lastSuggestionEndTimeRef forward by backoff so the cooldown check naturally
+      // enforces the longer wait. On success failureBackoffMs is 0 — normal 5s applies.
+      lastSuggestionEndTimeRef.current = Date.now() + failureBackoffMs;
       setIsSuggestionsLoading(false);
       if (suggestionsPendingRef.current) {
         suggestionsPendingRef.current = false;
         queueMicrotask(() => {
-          void generateSuggestions(); // cooldown check runs at the top of the next call
+          void generateSuggestions(); // cooldown check (+ any backoff) runs at the top
         });
       }
     }
