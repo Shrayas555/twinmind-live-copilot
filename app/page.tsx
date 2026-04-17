@@ -74,7 +74,7 @@ export default function Home() {
   const lastSuggestionEndTimeRef = useRef(0);
   const suggestionsCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const consecutiveSuggestionFailuresRef = useRef(0);
-  const MIN_SUGGESTION_COOLDOWN_MS = 5000;
+  const MIN_SUGGESTION_COOLDOWN_MS = 8000;
   // AbortController for the active suggestions fetch — lets streamChat cancel it
   // immediately when a chat starts, freeing full Groq bandwidth for the chat call.
   const suggestionsAbortRef = useRef<AbortController | null>(null);
@@ -417,6 +417,12 @@ export default function Home() {
         addLog({ type: "chat", status: "error", durationMs: Date.now() - t0, detail: msg });
         setError(msg);
       } finally {
+        // After a long chat, Groq needs proportional recovery time before handling
+        // suggestions. A 20s chat → ~12s recovery; a 1s chat → ~0.6s (negligible).
+        const chatDurationMs = Date.now() - t0;
+        const postChatRecoveryMs = Math.min(Math.round(chatDurationMs * 0.6), 15000);
+        lastSuggestionEndTimeRef.current = Date.now() + postChatRecoveryMs;
+
         isChatStreamingRef.current = false;
         setIsChatStreaming(false);
         setStreamingContent("");
