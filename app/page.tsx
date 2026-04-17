@@ -429,8 +429,11 @@ export default function Home() {
         content: text,
         timestamp: Date.now(),
       };
+      // Cap at last 10 messages (5 exchanges) — unbounded history balloons token count
+      // over long sessions. Meeting context comes from the transcript in the system
+      // prompt, not chat history, so capping history doesn't lose meeting awareness.
       const history = [
-        ...chatMessages.map((m) => ({ role: m.role, content: m.content })),
+        ...chatMessages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
         { role: "user" as const, content: text },
       ];
       streamChat(history, userMsg);
@@ -466,11 +469,11 @@ export default function Home() {
         fromSuggestionType: suggestion.type,    // for the type badge in chat
       };
 
-      // History: use short display content for prior turns so the context doesn't balloon
-      // (each apiContent embeds 1500 words of transcript — after 3 clicks that's 4500 extra tokens).
-      // Only the CURRENT turn gets the full detailed prompt with transcript context.
+      // Cap at last 10 messages and use short display content for prior turns.
+      // Meeting context comes from the transcript embedded in detailedUserContent,
+      // not from chat history, so capping doesn't lose meeting awareness.
       const history = [
-        ...chatMessages.map((m) => ({ role: m.role, content: m.content })),
+        ...chatMessages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
         { role: "user" as const, content: detailedUserContent },
       ];
 
